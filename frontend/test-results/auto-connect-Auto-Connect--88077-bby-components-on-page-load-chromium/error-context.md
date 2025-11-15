@@ -1,0 +1,45 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - heading "🔬 Dual Interface Testing" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Two identical components for debugging multiplayer
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - heading "📱 Instance A" [level=2] [ref=e10]
+        - generic [ref=e11]: "Identical component #1"
+      - generic [ref=e13]:
+        - generic [ref=e15]:
+          - generic [ref=e16]:
+            - heading "🌐 Server" [level=3] [ref=e17]
+            - generic [ref=e18]: Connected • ws://localhost:9999/ws
+          - button "Connected" [disabled] [ref=e19]
+        - button "🎮 Create New Game" [ref=e21] [cursor=pointer]
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - heading "🎯 Available Games" [level=3] [ref=e24]
+            - generic [ref=e25]: Auto-refreshed live
+          - generic [ref=e27]:
+            - paragraph [ref=e28]: No active games
+            - paragraph [ref=e29]: Create one!
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "📱 Instance B" [level=2] [ref=e32]
+        - generic [ref=e33]: "Identical component #2"
+      - generic [ref=e35]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - heading "🌐 Server" [level=3] [ref=e39]
+            - generic [ref=e40]: Connected • ws://localhost:9999/ws
+          - button "Connected" [disabled] [ref=e41]
+        - button "🎮 Create New Game" [ref=e43] [cursor=pointer]
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - heading "🎯 Available Games" [level=3] [ref=e46]
+            - generic [ref=e47]: Auto-refreshed live
+          - generic [ref=e49]:
+            - paragraph [ref=e50]: No active games
+            - paragraph [ref=e51]: Create one!
+```

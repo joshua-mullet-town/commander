@@ -1,0 +1,22 @@
+{
+  "name": "commander-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Frontend interface for Commander's Flag War - the ChatGPT-controlled RTS game.",
+  "scripts": {
+    "dev": "vite --port 3456",
+    "build": "tsc && vite build -c vite.config.dual.ts",
+    "build-arena": "tsc && vite build -c vite.config.arena.ts --outDir dist-arena",
+    "preview": "vite preview",
+    "chatgpt-deploy-arena": "npm run build-arena && echo '⚔️ Arena-only interface ready for ChatGPT!' && echo '📁 File location: dist-arena/arena-only.html' && ls -la dist-arena/arena-only.html"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.7",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
