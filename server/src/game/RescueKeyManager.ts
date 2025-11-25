@@ -6,6 +6,8 @@
  * - Both can exist simultaneously
  */
 
+import { STARTING_POSITIONS, KEY_POSITIONS } from './constants';
+
 type Piece = {
   id: number;
   x: number;
@@ -30,26 +32,6 @@ type GameState = {
     B: { x: number; y: number } | null;
   };
   [key: string]: any;
-};
-
-// Starting positions for piece reset after rescue
-const STARTING_POSITIONS = {
-  A: [
-    { id: 1, x: 4, y: 9 },
-    { id: 2, x: 5, y: 9 },
-    { id: 3, x: 6, y: 9 }
-  ],
-  B: [
-    { id: 1, x: 4, y: 1 },
-    { id: 2, x: 5, y: 1 },
-    { id: 3, x: 6, y: 1 }
-  ]
-};
-
-// Fixed key positions
-const KEY_POSITIONS = {
-  A: { x: 9, y: 1 }, // Blue team's key in RED territory (top-right)
-  B: { x: 1, y: 9 }  // Red team's key in BLUE territory (bottom-left)
 };
 
 export class RescueKeyManager {

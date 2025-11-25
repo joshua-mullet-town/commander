@@ -8,6 +8,8 @@
  * - Flag carrier reaches own territory → WINS
  */
 
+import { STARTING_POSITIONS, FLAG_POSITIONS, TERRITORY, NO_GUARD_ZONES } from './constants';
+
 type Piece = {
   id: number;
   x: number;
@@ -34,18 +36,6 @@ type GameState = {
   gameStatus: 'waiting' | 'paused' | 'playing' | 'finished';
   winner?: 'A' | 'B';
   [key: string]: any;
-};
-
-// Flag spawn positions
-const FLAG_POSITIONS = {
-  A: { x: 5, y: 10 }, // Blue flag - center back of blue territory
-  B: { x: 5, y: 0 }   // Red flag - center back of red territory
-};
-
-// Territory boundaries (y-coordinates)
-const TERRITORY = {
-  A: { min: 6, max: 10 },  // Blue territory: rows 6-10
-  B: { min: 0, max: 4 }     // Red territory: rows 0-4
 };
 
 export class FlagManager {
@@ -192,6 +182,40 @@ export class FlagManager {
     gameState.flags[flagTeam].carriedBy = null;
 
     console.log(`🚩 ${flagName} flag returned to spawn (${spawnPos.x}, ${spawnPos.y})`);
+
+    // Reactivate no-guard zone for this flag
+    if (gameState.noGuardZoneActive) {
+      gameState.noGuardZoneActive[flagTeam] = true;
+      console.log(`🔒 ${flagName} no-guard zone reactivated`);
+
+      // Reset any defending pieces caught in the no-guard zone
+      const defenderPieces = gameState.players[flagTeam]?.pieces;
+      if (defenderPieces) {
+        defenderPieces.forEach(piece => {
+          if (!piece.alive) return;
+
+          // Check if piece is in their own no-guard zone
+          const inZone = this.isInNoGuardZone(piece.x, piece.y, flagTeam);
+          if (inZone) {
+            // Find starting position for this piece
+            const startPos = STARTING_POSITIONS[flagTeam].find(p => p.id === piece.id);
+            if (startPos) {
+              console.log(`⚠️  ${flagName} Piece ${piece.id} reset from (${piece.x},${piece.y}) to starting position (${startPos.x},${startPos.y})`);
+              piece.x = startPos.x;
+              piece.y = startPos.y;
+            }
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if a position is in a team's no-guard zone
+   */
+  private isInNoGuardZone(x: number, y: number, team: 'A' | 'B'): boolean {
+    const zone = NO_GUARD_ZONES[team];
+    return x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY;
   }
 
   /**

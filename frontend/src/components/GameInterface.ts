@@ -14,6 +14,7 @@ class GameInterface {
   private lobbyContainer!: HTMLElement;
   private gameContainer!: HTMLElement;
   private createGameBtn!: HTMLButtonElement;
+  private createAIGameBtn!: HTMLButtonElement;
   private gamesList!: HTMLElement;
   private lobbyStatus!: HTMLElement;
 
@@ -49,9 +50,13 @@ class GameInterface {
               <div id="lobbyStatus" class="text-game-accent font-medium">Ready to battle!</div>
             </div>
 
-            <div class="create-game-section mb-8 text-center">
+            <div class="create-game-section mb-8 text-center space-y-4">
               <button id="createGameBtn" class="bg-game-primary hover:bg-game-secondary text-black font-bold py-3 px-8 rounded-xl transition-all duration-200 hover:scale-105 shadow-lg">
                 + Create New Game
+              </button>
+              <div class="text-white/50">or</div>
+              <button id="createAIGameBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-xl transition-all duration-200 hover:scale-105 shadow-lg">
+                🤖 Play vs AI
               </button>
             </div>
 
@@ -86,12 +91,14 @@ class GameInterface {
     this.lobbyContainer = document.getElementById('lobbyContainer')!;
     this.gameContainer = document.getElementById('gameContainer')!;
     this.createGameBtn = document.getElementById('createGameBtn')! as HTMLButtonElement;
+    this.createAIGameBtn = document.getElementById('createAIGameBtn')! as HTMLButtonElement;
     this.gamesList = document.getElementById('gamesList')!;
     this.lobbyStatus = document.getElementById('lobbyStatus')!;
   }
 
   private attachEventListeners(): void {
     this.createGameBtn.addEventListener('click', () => this.createNewGame());
+    this.createAIGameBtn.addEventListener('click', () => this.createAIGame());
 
     document.getElementById('leaveGameBtn')?.addEventListener('click', () => this.leaveGame());
   }
@@ -138,8 +145,15 @@ class GameInterface {
     switch (message.type) {
       case 'roomCreated':
         this.currentRoom = message.payload.roomCode;
-        this.lobbyStatus.textContent = `Created room ${this.currentRoom} - waiting for opponent...`;
-        this.refreshGamesList();
+        // Check if this is an AI room (player side is set for AI rooms)
+        if (message.payload.playerSide) {
+          this.playerPerspective = message.payload.playerSide;
+          this.lobbyStatus.textContent = `AI match starting...`;
+          this.showGame();
+        } else {
+          this.lobbyStatus.textContent = `Created room ${this.currentRoom} - waiting for opponent...`;
+          this.refreshGamesList();
+        }
         break;
 
       case 'roomJoined':
@@ -157,6 +171,12 @@ class GameInterface {
       case 'gameState':
         if (this.battleArena) {
           this.battleArena.updateGameState(message.payload as GameState);
+        }
+        break;
+
+      case 'gameHistory':
+        if (this.battleArena) {
+          this.battleArena.showAIAnalysis(message.payload.history);
         }
         break;
 
@@ -187,6 +207,31 @@ class GameInterface {
     // Re-enable button after a delay
     setTimeout(() => {
       this.createGameBtn.disabled = false;
+    }, 2000);
+  }
+
+  private createAIGame(): void {
+    console.log('🤖 AI BUTTON CLICKED!');
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.error('❌ Socket not connected:', this.socket?.readyState);
+      this.lobbyStatus.textContent = 'Not connected to server';
+      return;
+    }
+
+    console.log('✅ Sending createAIRoom message to server...');
+    this.lobbyStatus.textContent = 'Creating AI match...';
+    this.createAIGameBtn.disabled = true;
+
+    this.socket.send(JSON.stringify({
+      type: 'createAIRoom',
+      payload: {}
+    }));
+    console.log('📤 createAIRoom message sent!');
+
+    // Re-enable button after a delay
+    setTimeout(() => {
+      this.createAIGameBtn.disabled = false;
     }, 2000);
   }
 
@@ -280,6 +325,22 @@ class GameInterface {
         onPieceClick: (piece) => {
           console.log('Piece clicked:', piece);
           // TODO: Implement piece selection and command input
+        },
+        onQueueMove: (move) => {
+          if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+            console.error('Cannot queue move: not connected');
+            return;
+          }
+
+          this.socket.send(JSON.stringify({
+            type: 'queueMove',
+            payload: {
+              roomCode: this.currentRoom,
+              pieceId: move.pieceId,
+              direction: move.direction,
+              distance: move.distance
+            }
+          }));
         }
       });
     } else {

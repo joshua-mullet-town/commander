@@ -1,4 +1,9 @@
-import type { GameState, GamePiece } from '../types/game';
+import type { GameState, GamePiece, GameHistory, RoundHistory } from '../types/game';
+import { AnimationController } from './AnimationController';
+import { DragDropHandler } from './DragDropHandler';
+import { BoardRenderer } from './BoardRenderer';
+
+console.log('✅ BattleArena with AI Analysis Scoreboard loaded - v4');
 
 export interface BattleArenaOptions {
   playerPerspective?: 'A' | 'B' | 'spectator';
@@ -16,11 +21,14 @@ export class BattleArena {
   private enableAnimations: boolean;
   private onPieceClick?: BattleArenaOptions['onPieceClick'];
   private onQueueMove?: BattleArenaOptions['onQueueMove'];
-  private dragState: { pieceId: number; player: 'A' | 'B'; startX: number; startY: number; startGridX: number; startGridY: number; lastGhostCell?: string; lastDirection?: 'up' | 'down' | 'left' | 'right'; lastDistance?: number } | null = null;
-  private queuedMoves: Map<number, { direction: 'up' | 'down' | 'left' | 'right'; distance: number; player: 'A' | 'B' }> = new Map();
   private countdownInterval: number | null = null;
   private gameStartTime: number | null = null;
   private totalGameTime: number | null = null;
+
+  // Module instances
+  private animationController: AnimationController;
+  private dragDropHandler: DragDropHandler;
+  private boardRenderer: BoardRenderer;
 
   constructor(containerId: string, options: BattleArenaOptions = {}) {
     const container = document.getElementById(containerId);
@@ -34,6 +42,15 @@ export class BattleArena {
     this.enableAnimations = options.enableAnimations !== false;
     this.onPieceClick = options.onPieceClick;
     this.onQueueMove = options.onQueueMove;
+
+    // Initialize modules
+    this.animationController = new AnimationController(this.container);
+    this.boardRenderer = new BoardRenderer(this.container);
+    this.dragDropHandler = new DragDropHandler(
+      this.container,
+      this.boardRenderer.showGhostInCell.bind(this.boardRenderer),
+      this.onQueueMove
+    );
 
     this.init();
   }
@@ -58,6 +75,7 @@ export class BattleArena {
           <!-- Round & Timer Info -->
           <div class="flex justify-between mb-6 px-6 py-4 bg-black/60 rounded-xl text-base font-bold border-2 border-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.3)]" style="backdrop-filter: blur(10px);">
             <span id="currentRound" class="text-cyan-300" style="text-shadow: 0 0 10px rgba(34,211,238,0.8);">Round: 1</span>
+            <span id="serverUptime" class="text-sm text-gray-400">Server: unknown</span>
             <span id="nextTick" class="text-pink-300" style="text-shadow: 0 0 10px rgba(236,72,153,0.8);">Next tick: 3s</span>
           </div>
 
@@ -157,6 +175,67 @@ export class BattleArena {
     }
   }
 
+  // Update no-guard zone visualization
+  private updateNoGuardZones(gameState: GameState): void {
+    if (!gameState.noGuardZoneBounds) return;
+
+    // Clear all existing zone overlays
+    const existingOverlays = this.container.querySelectorAll('.zone-overlay');
+    existingOverlays.forEach(el => el.remove());
+
+    // Update Blue (A) no-guard zone
+    const blueZone = gameState.noGuardZoneBounds.A;
+    const blueActive = gameState.noGuardZoneActive?.A ?? false;
+
+    if (blueActive) {
+      for (let y = blueZone.minY; y <= blueZone.maxY; y++) {
+        for (let x = blueZone.minX; x <= blueZone.maxX; x++) {
+          const cell = this.container.querySelector(`#cell-${x}-${y}`) as HTMLElement;
+          if (cell) {
+            const overlay = document.createElement('div');
+            overlay.className = 'zone-overlay';
+            overlay.style.cssText = `
+              position: absolute;
+              inset: 0;
+              background-color: rgba(59, 130, 246, 0.25);
+              border: 2px solid rgba(59, 130, 246, 0.7);
+              box-shadow: inset 0 0 15px rgba(59, 130, 246, 0.5);
+              pointer-events: none;
+              z-index: 1;
+            `;
+            cell.appendChild(overlay);
+          }
+        }
+      }
+    }
+
+    // Update Red (B) no-guard zone
+    const redZone = gameState.noGuardZoneBounds.B;
+    const redActive = gameState.noGuardZoneActive?.B ?? false;
+
+    if (redActive) {
+      for (let y = redZone.minY; y <= redZone.maxY; y++) {
+        for (let x = redZone.minX; x <= redZone.maxX; x++) {
+          const cell = this.container.querySelector(`#cell-${x}-${y}`) as HTMLElement;
+          if (cell) {
+            const overlay = document.createElement('div');
+            overlay.className = 'zone-overlay';
+            overlay.style.cssText = `
+              position: absolute;
+              inset: 0;
+              background-color: rgba(239, 68, 68, 0.25);
+              border: 2px solid rgba(239, 68, 68, 0.7);
+              box-shadow: inset 0 0 15px rgba(239, 68, 68, 0.5);
+              pointer-events: none;
+              z-index: 1;
+            `;
+            cell.appendChild(overlay);
+          }
+        }
+      }
+    }
+  }
+
   // Main update method - call this when game state changes
   updateGameState(gameState: GameState): void {
     const prevState = this.gameState;
@@ -173,7 +252,13 @@ export class BattleArena {
       }
     }
 
+    // Update no-guard zone visualization
+    this.updateNoGuardZones(gameState);
+
     this.gameState = gameState;
+
+    // Update drag handler with latest game state for no-guard zone validation
+    this.dragDropHandler.updateGameState(gameState);
 
     this.updateRoundInfo();
     this.updatePlayerStatus();
@@ -187,8 +272,21 @@ export class BattleArena {
 
     const roundEl = this.container.querySelector('#currentRound') as HTMLElement;
     const statusEl = this.container.querySelector('#gameStatus') as HTMLElement;
+    const serverUptimeEl = this.container.querySelector('#serverUptime') as HTMLElement;
 
     if (roundEl) roundEl.textContent = `Round: ${this.gameState.round}`;
+
+    // Update server uptime if available
+    if (serverUptimeEl && this.gameState.serverStartTime) {
+      const uptimeSeconds = Math.floor((Date.now() - this.gameState.serverStartTime) / 1000);
+      const minutes = Math.floor(uptimeSeconds / 60);
+      const seconds = uptimeSeconds % 60;
+      serverUptimeEl.textContent = `Server: ${minutes}m ${seconds}s`;
+      serverUptimeEl.className = 'text-sm text-green-400'; // Indicate server is running
+    } else if (serverUptimeEl) {
+      serverUptimeEl.textContent = 'Server: unknown';
+      serverUptimeEl.className = 'text-sm text-gray-400';
+    }
 
     // Countdown is now calculated locally in updateCountdown()
     this.updateCountdown();
@@ -285,7 +383,16 @@ export class BattleArena {
 
     // Animate pieces that moved (before clearing board)
     if (this.enableAnimations && prevState) {
-      this.animateMovingPieces(prevState, this.gameState);
+      // Extract movement commands from previous round for animation
+      const prevRound = prevState.round;
+      const moves = {
+        playerA: prevState.commandQueue[prevRound]?.playerA || [],
+        playerB: prevState.commandQueue[prevRound]?.playerB || []
+      };
+
+      // Set moves for step-by-step animation
+      this.animationController.setCurrentMoves(moves);
+      this.animationController.animateMovingPieces(prevState, this.gameState);
     }
 
     // Clear board first
@@ -309,13 +416,13 @@ export class BattleArena {
     }
 
     // Update jails
-    this.updateJails();
+    this.boardRenderer.updateJails(this.gameState);
 
-    // Place rescue key if it exists
-    this.placeRescueKey();
+    // Place rescue keys if they exist
+    this.boardRenderer.placeRescueKeys(this.gameState);
 
     // Place flags
-    this.placeFlags();
+    this.boardRenderer.placeFlags(this.gameState);
 
     // Re-draw ghost previews for queued moves (that haven't executed yet)
     this.redrawQueuedGhosts(prevState);
@@ -326,12 +433,12 @@ export class BattleArena {
     cells.forEach(cell => {
       const cellElement = cell as HTMLElement;
       // Remove pieces, keys, and flags
-      // Preserve ghost previews if dragging OR if there are queued moves
-      if (this.dragState || this.queuedMoves.size > 0) {
-        // Preserve ghost previews during drag or when moves are queued
+      // Preserve ghost previews if there are queued moves
+      if (this.dragDropHandler.getQueuedMoves().size > 0) {
+        // Preserve ghost previews when moves are queued
         cellElement.querySelectorAll('.piece, .rescue-key, .flag').forEach(el => el.remove());
       } else {
-        // Clear everything including ghosts when not dragging and no queued moves
+        // Clear everything including ghosts when no queued moves
         cellElement.querySelectorAll('.piece, .rescue-key, .flag, .ghost-preview').forEach(el => el.remove());
       }
     });
@@ -374,7 +481,7 @@ export class BattleArena {
 
     // Add drag handlers only for player's own pieces
     if (isDraggable) {
-      pieceEl.addEventListener('mousedown', (e) => this.handlePieceDragStart(e, piece, player));
+      pieceEl.addEventListener('mousedown', (e) => this.dragDropHandler.handlePieceDragStart(e, piece, player));
     }
 
     cell.appendChild(pieceEl);
@@ -478,461 +585,22 @@ export class BattleArena {
     }
   }
 
-  private handlePieceDragStart(e: MouseEvent, piece: GamePiece, player: 'A' | 'B'): void {
-    e.preventDefault();
-
-    this.dragState = {
-      pieceId: piece.id,
-      player,
-      startX: e.clientX,
-      startY: e.clientY,
-      startGridX: piece.x,
-      startGridY: piece.y
-    };
-
-    // Add global mouse move and up handlers
-    const handleMouseMove = (e: MouseEvent) => this.handlePieceDragMove(e);
-    const handleMouseUp = (e: MouseEvent) => {
-      this.handlePieceDragEnd(e);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }
-
-  private handlePieceDragMove(e: MouseEvent): void {
-    if (!this.dragState) return;
-
-    // Temporarily hide all pieces to detect the cell underneath
-    const pieces = this.container.querySelectorAll('.piece');
-    pieces.forEach(p => (p as HTMLElement).style.pointerEvents = 'none');
-
-    // Use elementFromPoint to detect which cell is under the cursor
-    const element = document.elementFromPoint(e.clientX, e.clientY);
-    const cell = element?.closest('[id^="cell-"]') as HTMLElement;
-
-    // Restore pointer events
-    pieces.forEach(p => (p as HTMLElement).style.pointerEvents = '');
-
-    if (cell && cell.id.startsWith('cell-')) {
-      // Extract grid coordinates from cell ID (format: cell-x-y)
-      const parts = cell.id.split('-');
-      const hoverX = parseInt(parts[1]);
-      const hoverY = parseInt(parts[2]);
-
-      // Calculate deltas from start position
-      const gridDeltaX = hoverX - this.dragState.startGridX;
-      const gridDeltaY = hoverY - this.dragState.startGridY;
-
-      // Show visual feedback (arrow overlay)
-      this.showDragArrow(this.dragState.startGridX, this.dragState.startGridY, gridDeltaX, gridDeltaY);
-
-      // Determine and store direction/distance for use on drop
-      let direction: 'up' | 'down' | 'left' | 'right' | null = null;
-      let distance = 0;
-
-      if (Math.abs(gridDeltaX) > Math.abs(gridDeltaY)) {
-        // Horizontal movement
-        if (gridDeltaX > 0) {
-          direction = 'right';
-          distance = gridDeltaX;
-        } else if (gridDeltaX < 0) {
-          direction = 'left';
-          distance = Math.abs(gridDeltaX);
-        }
-      } else {
-        // Vertical movement
-        if (gridDeltaY > 0) {
-          direction = 'down';
-          distance = gridDeltaY;
-        } else if (gridDeltaY < 0) {
-          direction = 'up';
-          distance = Math.abs(gridDeltaY);
-        }
-      }
-
-      // Store for use on drop
-      this.dragState.lastDirection = direction || undefined;
-      this.dragState.lastDistance = distance > 0 ? distance : undefined;
-
-      // Show ghost at ACTUAL destination based on direction/distance, not hover position
-      if (direction && distance > 0) {
-        // Calculate actual destination based on direction and distance
-        let destX = this.dragState.startGridX;
-        let destY = this.dragState.startGridY;
-
-        switch (direction) {
-          case 'up':
-            destY = Math.max(0, this.dragState.startGridY - distance);
-            break;
-          case 'down':
-            destY = Math.min(10, this.dragState.startGridY + distance);
-            break;
-          case 'left':
-            destX = Math.max(0, this.dragState.startGridX - distance);
-            break;
-          case 'right':
-            destX = Math.min(10, this.dragState.startGridX + distance);
-            break;
-        }
-
-        const cellKey = `${destX}-${destY}`;
-        if (this.dragState.lastGhostCell !== cellKey) {
-          // Clear ALL ghost previews before creating new one
-          this.container.querySelectorAll('.ghost-preview').forEach(el => el.remove());
-          this.showGhostInCell(destX, destY, this.dragState.pieceId, this.dragState.player);
-          this.dragState.lastGhostCell = cellKey;
-        }
-      } else {
-        // Invalid move (no direction), clear ghosts
-        this.container.querySelectorAll('.ghost-preview').forEach(el => el.remove());
-        this.dragState.lastGhostCell = undefined;
-      }
-    }
-  }
-
-  private handlePieceDragEnd(e: MouseEvent): void {
-    if (!this.dragState) return;
-
-    // Clear drag arrow
-    this.clearDragArrow();
-
-    // Use the stored direction/distance from last drag move
-    const direction = this.dragState.lastDirection;
-    const distance = this.dragState.lastDistance;
-
-    // Queue the move if valid
-    if (direction && distance && distance > 0 && this.onQueueMove) {
-      this.onQueueMove({
-        pieceId: this.dragState.pieceId,
-        direction,
-        distance
-      });
-
-      // Store queued move so ghost persists
-      this.queuedMoves.set(this.dragState.pieceId, {
-        direction,
-        distance,
-        player: this.dragState.player
-      });
-
-      // Ghost preview will persist because of queuedMoves
-    }
-
-    this.dragState = null;
-  }
-
-  private showDragArrow(startX: number, startY: number, deltaX: number, deltaY: number): void {
-    // Clear previous arrow
-    this.clearDragArrow();
-
-    if (deltaX === 0 && deltaY === 0) return;
-
-    // Create arrow overlay - huge background indicator
-    const arrow = document.createElement('div');
-    arrow.id = 'drag-arrow';
-    arrow.className = 'absolute pointer-events-none z-0 inset-0 flex items-center justify-center';
-
-    // Determine primary direction
-    let direction = '';
-    let length = 0;
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      direction = deltaX > 0 ? '→' : '←';
-      length = Math.abs(deltaX);
-    } else {
-      direction = deltaY > 0 ? '↓' : '↑';
-      length = Math.abs(deltaY);
-    }
-
-    arrow.innerHTML = `
-      <div class="text-cyan-300/10 font-black whitespace-nowrap select-none" style="font-size: clamp(4rem, 20vw, 12rem); text-shadow: 0 0 40px rgba(34,211,238,0.15);">
-        ${direction} ${length}
-      </div>
-    `;
-
-    this.container.querySelector('#board')?.appendChild(arrow);
-  }
-
-  private clearDragArrow(): void {
-    const arrow = this.container.querySelector('#drag-arrow');
-    if (arrow) {
-      arrow.remove();
-    }
-  }
-
-  private animateMovingPieces(prevState: GameState, newState: GameState): void {
-    const animationLayer = this.container.querySelector('#animationLayer');
-    if (!animationLayer) return;
-
-    // Check Player A pieces
-    if (prevState.players.A && newState.players.A) {
-      prevState.players.A.pieces.forEach(prevPiece => {
-        const newPiece = newState.players.A!.pieces.find(p => p.id === prevPiece.id);
-        if (!newPiece) return;
-
-        // Piece moved and is still alive
-        if (prevPiece.alive && newPiece.alive && (prevPiece.x !== newPiece.x || prevPiece.y !== newPiece.y)) {
-          this.createGhostAnimation(prevPiece, newPiece, 'A', animationLayer, false);
-        }
-        // Piece was alive, moved, and got jailed
-        else if (prevPiece.alive && !newPiece.alive && (prevPiece.x !== newPiece.x || prevPiece.y !== newPiece.y)) {
-          this.createGhostAnimation(prevPiece, newPiece, 'A', animationLayer, true);
-        }
-      });
-    }
-
-    // Check Player B pieces
-    if (prevState.players.B && newState.players.B) {
-      prevState.players.B.pieces.forEach(prevPiece => {
-        const newPiece = newState.players.B!.pieces.find(p => p.id === prevPiece.id);
-        if (!newPiece) return;
-
-        // Piece moved and is still alive
-        if (prevPiece.alive && newPiece.alive && (prevPiece.x !== newPiece.x || prevPiece.y !== newPiece.y)) {
-          this.createGhostAnimation(prevPiece, newPiece, 'B', animationLayer, false);
-        }
-        // Piece was alive, moved, and got jailed
-        else if (prevPiece.alive && !newPiece.alive && (prevPiece.x !== newPiece.x || prevPiece.y !== newPiece.y)) {
-          this.createGhostAnimation(prevPiece, newPiece, 'B', animationLayer, true);
-        }
-      });
-    }
-  }
-
-  private createGhostAnimation(fromPiece: GamePiece, toPiece: GamePiece, player: 'A' | 'B', animationLayer: Element, gotJailed: boolean): void {
-    // Get actual cell elements to calculate exact positions
-    const fromCell = this.container.querySelector(`#cell-${fromPiece.x}-${fromPiece.y}`) as HTMLElement;
-    const toCell = this.container.querySelector(`#cell-${toPiece.x}-${toPiece.y}`) as HTMLElement;
-
-    if (!fromCell || !toCell) return;
-
-    const board = this.container.querySelector('#board') as HTMLElement;
-    if (!board) return;
-
-    // Get board position as reference
-    const boardRect = board.getBoundingClientRect();
-
-    // Get cell positions relative to board
-    const fromCellRect = fromCell.getBoundingClientRect();
-    const toCellRect = toCell.getBoundingClientRect();
-    const cellWidth = toCellRect.width;
-    const pieceSize = cellWidth * 0.75; // Piece is 75% of cell width
-    const halfPiece = pieceSize / 2;
-
-    // Calculate center positions relative to board
-    const fromX = fromCellRect.left - boardRect.left + fromCellRect.width / 2 - halfPiece;
-    const fromY = fromCellRect.top - boardRect.top + fromCellRect.height / 2 - halfPiece;
-    let toX = toCellRect.left - boardRect.left + toCellRect.width / 2 - halfPiece;
-    let toY = toCellRect.top - boardRect.top + toCellRect.height / 2 - halfPiece;
-
-    // If collision/jail, stop one cell width before target, then add 7px back
-    if (gotJailed) {
-      const cellWidth = toCellRect.width;
-      const deltaX = toX - fromX;
-      const deltaY = toY - fromY;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-      // Stop at: full distance - one cell width + 7px
-      const stopDistance = distance - cellWidth + 7;
-      const ratio = stopDistance / distance;
-
-      toX = fromX + (deltaX * ratio);
-      toY = fromY + (deltaY * ratio);
-    }
-
-    // Create ghost piece - size it based on cell size for responsiveness
-    const ghost = document.createElement('div');
-    ghost.className = `absolute rounded-full flex items-center justify-center font-black z-50 ${
-      player === 'A'
-        ? 'bg-gradient-to-br from-blue-400 to-blue-600 text-white border-2 border-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.8)]'
-        : 'bg-gradient-to-br from-red-400 to-red-600 text-white border-2 border-red-300 shadow-[0_0_15px_rgba(239,68,68,0.8)]'
-    }`;
-    ghost.style.width = `${pieceSize}px`;
-    ghost.style.height = `${pieceSize}px`;
-    ghost.style.fontSize = 'clamp(0.35rem, 2.5vw, 0.875rem)';
-    ghost.textContent = fromPiece.id.toString();
-    ghost.style.left = `${fromX}px`;
-    ghost.style.top = `${fromY}px`;
-    ghost.style.transition = 'all 0.4s ease-out';
-
-    animationLayer.appendChild(ghost);
-
-    // Trigger movement animation on next frame
-    requestAnimationFrame(() => {
-      ghost.style.left = `${toX}px`;
-      ghost.style.top = `${toY}px`;
-    });
-
-    if (gotJailed) {
-      // After moving to collision point, pause briefly, then shake and fade out
-      setTimeout(() => {
-        // Add shake animation
-        ghost.style.animation = 'shake 0.3s ease-in-out, fadeOut 0.3s ease-in-out';
-        ghost.style.animationDelay = '0s, 0.15s';
-      }, 600); // Increased from 400ms to 600ms for longer pause
-
-      // Remove ghost after pause + shake + fade
-      setTimeout(() => {
-        ghost.remove();
-      }, 1300); // Increased from 1100ms to 1300ms
-    } else {
-      // Normal movement - remove after animation
-      setTimeout(() => {
-        ghost.remove();
-      }, 400);
-    }
-  }
-
-  private updateJails(): void {
-    if (!this.gameState) return;
-
-    // Update Player A jail
-    const jailA = this.container.querySelector('#jailA') as HTMLElement;
-    if (jailA && this.gameState.players.A) {
-      jailA.innerHTML = '';
-      this.gameState.players.A.jailedPieces?.forEach(pieceId => {
-        const pieceEl = document.createElement('div');
-        pieceEl.className = 'bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs';
-        pieceEl.textContent = pieceId.toString();
-        jailA.appendChild(pieceEl);
-      });
-    }
-
-    // Update Player B jail
-    const jailB = this.container.querySelector('#jailB') as HTMLElement;
-    if (jailB && this.gameState.players.B) {
-      jailB.innerHTML = '';
-      this.gameState.players.B.jailedPieces?.forEach(pieceId => {
-        const pieceEl = document.createElement('div');
-        pieceEl.className = 'bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs';
-        pieceEl.textContent = pieceId.toString();
-        jailB.appendChild(pieceEl);
-      });
-    }
-  }
-
-  private placeRescueKey(): void {
-    if (!this.gameState || !this.gameState.rescueKeys) return;
-
-    // Place Blue team's key (Player A)
-    if (this.gameState.rescueKeys.A) {
-      const keyA = this.gameState.rescueKeys.A;
-      const cellA = this.container.querySelector(`#cell-${keyA.x}-${keyA.y}`) as HTMLElement;
-      if (cellA) {
-        const keyEl = document.createElement('div');
-        keyEl.className = 'rescue-key rescue-key-a absolute inset-0 flex items-center justify-center z-5';
-        keyEl.style.fontSize = 'clamp(1rem, 4vw, 1.5rem)';
-        keyEl.style.filter = 'hue-rotate(200deg) saturate(1.5)'; // Blue tint
-        keyEl.textContent = '🔑';
-        keyEl.title = 'Blue Team Rescue Key - Land here to free jailed teammates!';
-        cellA.appendChild(keyEl);
-      }
-    }
-
-    // Place Red team's key (Player B)
-    if (this.gameState.rescueKeys.B) {
-      const keyB = this.gameState.rescueKeys.B;
-      const cellB = this.container.querySelector(`#cell-${keyB.x}-${keyB.y}`) as HTMLElement;
-      if (cellB) {
-        const keyEl = document.createElement('div');
-        keyEl.className = 'rescue-key rescue-key-b absolute inset-0 flex items-center justify-center z-5';
-        keyEl.style.fontSize = 'clamp(1rem, 4vw, 1.5rem)';
-        keyEl.style.filter = 'hue-rotate(0deg) saturate(1.5)'; // Red/orange tint
-        keyEl.textContent = '🔑';
-        keyEl.title = 'Red Team Rescue Key - Land here to free jailed teammates!';
-        cellB.appendChild(keyEl);
-      }
-    }
-  }
-
-  private placeFlags(): void {
-    if (!this.gameState || !this.gameState.flags) return;
-
-    // Place Blue flag (Player A's flag)
-    const flagA = this.gameState.flags.A;
-    if (flagA) {
-      const cellA = this.container.querySelector(`#cell-${flagA.x}-${flagA.y}`) as HTMLElement;
-      if (cellA) {
-        const flagEl = document.createElement('div');
-        // If flag is carried, show it on top of piece with transparency (z-20 is above pieces which are z-10)
-        // If flag is not carried, show it normally (z-5 is below pieces)
-        const isCarried = flagA.carriedBy !== null;
-        flagEl.className = `flag flag-a absolute inset-0 flex items-center justify-center ${isCarried ? 'z-20' : 'z-5'}`;
-        flagEl.style.fontSize = 'clamp(1.2rem, 5vw, 2rem)';
-        flagEl.textContent = '🚩';
-        flagEl.style.filter = 'hue-rotate(200deg) saturate(1.5)'; // Blue tint
-        flagEl.style.opacity = isCarried ? '0.5' : '1'; // 50% opacity when carried
-        flagEl.style.pointerEvents = 'none'; // Allow clicks to pass through to piece underneath
-        flagEl.title = flagA.carriedBy ? `Blue flag carried by ${flagA.carriedBy.player} Piece ${flagA.carriedBy.pieceId}` : 'Blue Flag - Capture and bring to your territory!';
-        cellA.appendChild(flagEl);
-      }
-    }
-
-    // Place Red flag (Player B's flag)
-    const flagB = this.gameState.flags.B;
-    if (flagB) {
-      const cellB = this.container.querySelector(`#cell-${flagB.x}-${flagB.y}`) as HTMLElement;
-      if (cellB) {
-        const flagEl = document.createElement('div');
-        // If flag is carried, show it on top of piece with transparency (z-20 is above pieces which are z-10)
-        // If flag is not carried, show it normally (z-5 is below pieces)
-        const isCarried = flagB.carriedBy !== null;
-        flagEl.className = `flag flag-b absolute inset-0 flex items-center justify-center ${isCarried ? 'z-20' : 'z-5'}`;
-        flagEl.style.fontSize = 'clamp(1.2rem, 5vw, 2rem)';
-        flagEl.textContent = '🚩';
-        flagEl.style.filter = 'hue-rotate(0deg) saturate(1.5)'; // Red tint
-        flagEl.style.opacity = isCarried ? '0.5' : '1'; // 50% opacity when carried
-        flagEl.style.pointerEvents = 'none'; // Allow clicks to pass through to piece underneath
-        flagEl.title = flagB.carriedBy ? `Red flag carried by ${flagB.carriedBy.player} Piece ${flagB.carriedBy.pieceId}` : 'Red Flag - Capture and bring to your territory!';
-        cellB.appendChild(flagEl);
-      }
-    }
-  }
-
-  private showGhostInCell(x: number, y: number, pieceId: number, player: 'A' | 'B'): void {
-    const cell = this.container.querySelector(`#cell-${x}-${y}`) as HTMLElement;
-    if (!cell) return;
-
-    // Check if a ghost for this piece already exists in this cell
-    const existingGhost = cell.querySelector(`.ghost-preview[data-piece-id="${pieceId}"]`);
-    if (existingGhost) {
-      // Ghost already exists for this piece - don't redraw to prevent flashing
-      return;
-    }
-
-    // Remove only ghosts for OTHER pieces in this cell (shouldn't happen, but just in case)
-    cell.querySelectorAll(`.ghost-preview:not([data-piece-id="${pieceId}"])`).forEach(el => el.remove());
-
-    const ghost = document.createElement('div');
-    ghost.className = 'ghost-preview absolute inset-0 m-auto rounded-full flex items-center justify-center font-black z-30 border-2 border-white/70 text-white/80';
-    ghost.setAttribute('data-piece-id', pieceId.toString());
-    ghost.style.width = '100%';
-    ghost.style.height = '100%';
-    ghost.style.fontSize = 'clamp(0.25rem, 1.5vw, 0.6rem)';
-    ghost.style.pointerEvents = 'none';
-    ghost.style.background = 'transparent';
-    ghost.style.boxShadow = '0 0 8px rgba(255, 255, 255, 0.3)';
-    ghost.textContent = pieceId.toString();
-
-    cell.appendChild(ghost);
-  }
-
   private redrawQueuedGhosts(prevState: GameState | null): void {
     if (!this.gameState) return;
 
+    const queuedMoves = this.dragDropHandler.getQueuedMoves();
+
     // For each queued move, check if the piece has moved yet
-    this.queuedMoves.forEach((move, pieceId) => {
+    queuedMoves.forEach((move, pieceId) => {
       const playerData = this.gameState!.players[move.player];
       if (!playerData) {
-        this.queuedMoves.delete(pieceId);
+        queuedMoves.delete(pieceId);
         return;
       }
 
       const piece = playerData.pieces.find(p => p.id === pieceId);
       if (!piece || !piece.alive) {
-        this.queuedMoves.delete(pieceId);
+        queuedMoves.delete(pieceId);
         return;
       }
 
@@ -962,7 +630,7 @@ export class BattleArena {
 
         if (prevPiece && (prevPiece.x !== piece.x || prevPiece.y !== piece.y)) {
           // Piece has moved - remove queued move and its ghost
-          this.queuedMoves.delete(pieceId);
+          queuedMoves.delete(pieceId);
           // Remove the ghost from DOM
           const ghost = this.container.querySelector(`.ghost-preview[data-piece-id="${pieceId}"]`);
           if (ghost) ghost.remove();
@@ -971,57 +639,372 @@ export class BattleArena {
       }
 
       // Re-draw ghost at destination
-      this.showGhostInCell(destX, destY, pieceId, move.player);
+      this.boardRenderer.showGhostInCell(destX, destY, pieceId, move.player);
     });
   }
 
-  private showGhostPreview(pieceId: number, player: 'A' | 'B', direction: 'up' | 'down' | 'left' | 'right', distance: number): void {
-    if (!this.gameState) return;
+  private renderMiniBoard(round: RoundHistory): string {
+    if (!round.piecesBeforeMove) return '';
 
-    // Clear any existing ghost previews
-    this.container.querySelectorAll('.ghost-preview').forEach(el => el.remove());
+    const GRID_SIZE = 11;
+    const CELL_SIZE = 20; // pixels
 
-    // Find the piece's current position
-    const playerData = this.gameState.players[player];
-    if (!playerData) return;
+    // Calculate piece movements
+    const movements = new Map<number, { from: {x: number, y: number}, to: {x: number, y: number}, player: 'A' | 'B' }>();
 
-    const piece = playerData.pieces.find(p => p.id === pieceId);
-    if (!piece || !piece.alive) return;
+    // Process Player A moves
+    round.playerAMoves.forEach(move => {
+      const piece = round.piecesBeforeMove!.A.find(p => p.id === move.pieceId);
+      if (piece && piece.alive) {
+        let toX = piece.x;
+        let toY = piece.y;
 
-    // Calculate destination
-    let destX = piece.x;
-    let destY = piece.y;
+        switch (move.direction) {
+          case 'up': toY -= move.distance; break;
+          case 'down': toY += move.distance; break;
+          case 'left': toX -= move.distance; break;
+          case 'right': toX += move.distance; break;
+        }
 
-    switch (direction) {
-      case 'up':
-        destY = Math.max(0, piece.y - distance);
-        break;
-      case 'down':
-        destY = Math.min(10, piece.y + distance);
-        break;
-      case 'left':
-        destX = Math.max(0, piece.x - distance);
-        break;
-      case 'right':
-        destX = Math.min(10, piece.x + distance);
-        break;
+        // Clamp to board
+        toX = Math.max(0, Math.min(GRID_SIZE - 1, toX));
+        toY = Math.max(0, Math.min(GRID_SIZE - 1, toY));
+
+        movements.set(piece.id, { from: {x: piece.x, y: piece.y}, to: {x: toX, y: toY}, player: 'A' });
+      }
+    });
+
+    // Process Player B moves
+    round.playerBMoves.forEach(move => {
+      const piece = round.piecesBeforeMove!.B.find(p => p.id === move.pieceId);
+      if (piece && piece.alive) {
+        let toX = piece.x;
+        let toY = piece.y;
+
+        switch (move.direction) {
+          case 'up': toY -= move.distance; break;
+          case 'down': toY += move.distance; break;
+          case 'left': toX -= move.distance; break;
+          case 'right': toX += move.distance; break;
+        }
+
+        // Clamp to board
+        toX = Math.max(0, Math.min(GRID_SIZE - 1, toX));
+        toY = Math.max(0, Math.min(GRID_SIZE - 1, toY));
+
+        movements.set(100 + piece.id, { from: {x: piece.x, y: piece.y}, to: {x: toX, y: toY}, player: 'B' });
+      }
+    });
+
+    const boardSize = GRID_SIZE * CELL_SIZE;
+
+    // Build SVG
+    let svg = `<svg width="${boardSize}" height="${boardSize}" class="border border-white/20 rounded">`;
+
+    // Draw territory backgrounds
+    svg += `<rect x="0" y="${6 * CELL_SIZE}" width="${boardSize}" height="${5 * CELL_SIZE}" fill="rgba(59, 130, 246, 0.15)"/>`; // Blue territory
+    svg += `<rect x="0" y="0" width="${boardSize}" height="${5 * CELL_SIZE}" fill="rgba(239, 68, 68, 0.15)"/>`; // Red territory
+    svg += `<rect x="0" y="${5 * CELL_SIZE}" width="${boardSize}" height="${CELL_SIZE}" fill="rgba(128, 128, 128, 0.1)"/>`; // Neutral
+
+    // Draw grid
+    for (let i = 0; i <= GRID_SIZE; i++) {
+      svg += `<line x1="${i * CELL_SIZE}" y1="0" x2="${i * CELL_SIZE}" y2="${boardSize}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+      svg += `<line x1="0" y1="${i * CELL_SIZE}" x2="${boardSize}" y2="${i * CELL_SIZE}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
     }
 
-    // Place ghost at destination
-    const destCell = this.container.querySelector(`#cell-${destX}-${destY}`) as HTMLElement;
-    if (!destCell) return;
+    // Draw arrows for movements
+    movements.forEach((movement, id) => {
+      const fromX = movement.from.x * CELL_SIZE + CELL_SIZE / 2;
+      const fromY = movement.from.y * CELL_SIZE + CELL_SIZE / 2;
+      const toX = movement.to.x * CELL_SIZE + CELL_SIZE / 2;
+      const toY = movement.to.y * CELL_SIZE + CELL_SIZE / 2;
 
-    const ghost = document.createElement('div');
-    ghost.className = `ghost-preview absolute inset-0 rounded-full flex items-center justify-center font-black transition-all duration-300 z-20 opacity-50 animate-pulse border-4 ${
-      player === 'A'
-        ? 'bg-blue-500/60 text-white border-blue-300 shadow-[0_0_20px_rgba(59,130,246,0.6)]'
-        : 'bg-red-500/60 text-white border-red-300 shadow-[0_0_20px_rgba(239,68,68,0.6)]'
-    }`;
-    ghost.style.fontSize = 'clamp(0.35rem, 2.5vw, 0.875rem)'; // Match piece sizing
-    ghost.style.pointerEvents = 'none';
-    ghost.textContent = pieceId.toString();
-    ghost.title = `Queued move: ${direction} ${distance}`;
+      const color = movement.player === 'A' ? '#3b82f6' : '#ef4444';
+      const strokeWidth = 2;
 
-    destCell.appendChild(ghost);
+      // Draw arrow line
+      svg += `<line x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}" stroke="${color}" stroke-width="${strokeWidth}" marker-end="url(#arrowhead-${movement.player})"/>`;
+    });
+
+    // Define arrowhead markers
+    svg += `<defs>
+      <marker id="arrowhead-A" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+        <polygon points="0 0, 6 3, 0 6" fill="#3b82f6" />
+      </marker>
+      <marker id="arrowhead-B" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+        <polygon points="0 0, 6 3, 0 6" fill="#ef4444" />
+      </marker>
+    </defs>`;
+
+    // Draw pieces at starting positions
+    round.piecesBeforeMove.A.forEach(piece => {
+      if (piece.alive) {
+        const x = piece.x * CELL_SIZE + CELL_SIZE / 2;
+        const y = piece.y * CELL_SIZE + CELL_SIZE / 2;
+        svg += `<circle cx="${x}" cy="${y}" r="${CELL_SIZE / 3}" fill="#3b82f6" stroke="white" stroke-width="1"/>`;
+        svg += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="10" fill="white" font-weight="bold">${piece.id}</text>`;
+      }
+    });
+
+    round.piecesBeforeMove.B.forEach(piece => {
+      if (piece.alive) {
+        const x = piece.x * CELL_SIZE + CELL_SIZE / 2;
+        const y = piece.y * CELL_SIZE + CELL_SIZE / 2;
+        svg += `<circle cx="${x}" cy="${y}" r="${CELL_SIZE / 3}" fill="#ef4444" stroke="white" stroke-width="1"/>`;
+        svg += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="10" fill="white" font-weight="bold">${piece.id}</text>`;
+      }
+    });
+
+    svg += `</svg>`;
+
+    return svg;
   }
+
+  private renderMinimaxBoard(round: RoundHistory): string {
+    if (!round.aiAnalysis || !round.piecesBeforeMove) return '';
+
+    // Create a temporary round object with the minimax moves
+    const minimaxRound: RoundHistory = {
+      round: round.round,
+      playerAMoves: round.aiAnalysis.predictedEnemyMoves, // Enemy's predicted moves (Blue is player A)
+      playerBMoves: round.aiAnalysis.chosenMoves,         // AI's chosen moves (Red is player B)
+      piecesBeforeMove: round.piecesBeforeMove
+    };
+
+    // Reuse the existing mini board renderer
+    return this.renderMiniBoard(minimaxRound);
+  }
+
+  showAIAnalysis(history: GameHistory): void {
+
+    // Minimax AI scoring rules (displayed at beginning of timeline)
+    const systemPrompt = `📊 Minimax AI Scoring Rules:
+
+🏆 Win/Loss: ±10,000 points
+
+🚩 Flag Carrier Scoring:
+  • We have their flag: +500
+  • We have clear path home: +5,000 (can score next turn!)
+  • They have our flag: -500
+  • They have clear path home: -5,000 (they can score!)
+
+⚔️ Flag Attack Paths:
+  • Each piece with clear shot to enemy flag: +2,000
+  • Each enemy with clear shot to our flag: -2,000
+
+👥 Piece Count:
+  • Each piece advantage: ±100
+
+🛡️ Flag Defense:
+  • Each defender in our flag column: +300
+  • Each enemy defender blocking their flag: -300`;
+
+    // Create modal overlay
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+    modal.innerHTML = `
+      <div class="bg-gradient-to-br from-purple-900 to-slate-900 rounded-2xl border-4 border-cyan-400 max-w-7xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="p-6 border-b-2 border-cyan-400 flex justify-between items-center">
+          <h2 class="text-3xl font-black text-cyan-300">🤖 AI Analysis Timeline</h2>
+          <button id="closeModal" class="text-white hover:text-red-400 text-2xl font-bold">✕</button>
+        </div>
+
+        <!-- Timeline -->
+        <div id="timeline" class="flex-1 overflow-x-auto overflow-y-auto p-6">
+          <div class="flex gap-6" style="min-width: min-content;">
+            <!-- System Prompt Panel (Round 0) -->
+            <div class="flex-shrink-0 w-[600px] bg-gradient-to-br from-indigo-900/50 to-slate-800/50 rounded-xl border-2 border-indigo-400 p-6">
+              <div class="text-2xl font-bold text-indigo-300 mb-4">📜 System Prompt</div>
+              <div class="text-sm text-white/90 font-mono whitespace-pre-wrap leading-relaxed">${systemPrompt}</div>
+            </div>
+
+            ${history.map((round) => `
+              <div class="flex-shrink-0 w-[600px] bg-slate-800/50 rounded-xl border-2 border-purple-400 p-6">
+                <div class="text-xl font-bold text-cyan-300 mb-3">Round ${round.round}</div>
+
+                <!-- Mini Board Visualization -->
+                <div class="mb-3 flex justify-center">
+                  ${this.renderMiniBoard(round)}
+                </div>
+
+                <!-- Actual Position Score - Full Breakdown (MOVED TO TOP) -->
+                ${round.actualScoreAfterMove ? `
+                  <div class="mb-4 p-4 bg-amber-900/20 rounded-lg border border-amber-500/30">
+                    <div class="font-bold text-amber-300 mb-3">📊 Actual Position Score (After Round ${round.round})</div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                      <!-- Blue Team (A) Breakdown -->
+                      <div class="bg-blue-900/30 p-3 rounded border border-blue-500/30">
+                        <div class="font-bold text-blue-300 mb-2">Blue Team (A)</div>
+                        <div class="text-xs space-y-1 text-white/80">
+                          ${round.actualScoreAfterMove.A.weHaveFlag ? `<div>✓ We have their flag: <span class="text-green-400">+${round.actualScoreAfterMove.A.weHaveFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.theyHaveFlag ? `<div>✗ They have our flag: <span class="text-red-400">${round.actualScoreAfterMove.A.theyHaveFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.weOnTheirFlag ? `<div>↗ On their flag: <span class="text-green-400">+${round.actualScoreAfterMove.A.weOnTheirFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.theyOnOurFlag ? `<div>↘ On our flag: <span class="text-red-400">${round.actualScoreAfterMove.A.theyOnOurFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.weInTheirSafeZone ? `<div>⚡ In their safe zone: <span class="text-green-400">+${round.actualScoreAfterMove.A.weInTheirSafeZone}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.theyInOurSafeZone ? `<div>⚠ In our safe zone: <span class="text-red-400">${round.actualScoreAfterMove.A.theyInOurSafeZone}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.weOnBackWall ? `<div>🎯 On back wall: <span class="text-green-400">+${round.actualScoreAfterMove.A.weOnBackWall}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.theyOnBackWall ? `<div>🛡 They on back wall: <span class="text-red-400">${round.actualScoreAfterMove.A.theyOnBackWall}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.pieceAdvantage !== 0 ? `<div>👥 Piece advantage: <span class="${round.actualScoreAfterMove.A.pieceAdvantage > 0 ? 'text-green-400' : 'text-red-400'}">${round.actualScoreAfterMove.A.pieceAdvantage > 0 ? '+' : ''}${round.actualScoreAfterMove.A.pieceAdvantage}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.A.capturesThisRound !== 0 ? `<div>⚔️ Captures this round: <span class="${round.actualScoreAfterMove.A.capturesThisRound > 0 ? 'text-green-400' : 'text-red-400'}">${round.actualScoreAfterMove.A.capturesThisRound > 0 ? '+' : ''}${round.actualScoreAfterMove.A.capturesThisRound}</span></div>` : ''}
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-blue-500/30">
+                          <span class="text-xs text-white/70">Total: </span>
+                          <span class="font-bold text-lg ${round.actualScoreAfterMove.A.total > 0 ? 'text-green-400' : round.actualScoreAfterMove.A.total < 0 ? 'text-red-400' : 'text-white'}">
+                            ${round.actualScoreAfterMove.A.total > 0 ? '+' : ''}${round.actualScoreAfterMove.A.total}
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Red Team (B) Breakdown -->
+                      <div class="bg-red-900/30 p-3 rounded border border-red-500/30">
+                        <div class="font-bold text-red-300 mb-2">Red Team (B)</div>
+                        <div class="text-xs space-y-1 text-white/80">
+                          ${round.actualScoreAfterMove.B.weHaveFlag ? `<div>✓ We have their flag: <span class="text-green-400">+${round.actualScoreAfterMove.B.weHaveFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.theyHaveFlag ? `<div>✗ They have our flag: <span class="text-red-400">${round.actualScoreAfterMove.B.theyHaveFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.weOnTheirFlag ? `<div>↗ On their flag: <span class="text-green-400">+${round.actualScoreAfterMove.B.weOnTheirFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.theyOnOurFlag ? `<div>↘ On our flag: <span class="text-red-400">${round.actualScoreAfterMove.B.theyOnOurFlag}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.weInTheirSafeZone ? `<div>⚡ In their safe zone: <span class="text-green-400">+${round.actualScoreAfterMove.B.weInTheirSafeZone}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.theyInOurSafeZone ? `<div>⚠ In our safe zone: <span class="text-red-400">${round.actualScoreAfterMove.B.theyInOurSafeZone}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.weOnBackWall ? `<div>🎯 On back wall: <span class="text-green-400">+${round.actualScoreAfterMove.B.weOnBackWall}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.theyOnBackWall ? `<div>🛡 They on back wall: <span class="text-red-400">${round.actualScoreAfterMove.B.theyOnBackWall}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.pieceAdvantage !== 0 ? `<div>👥 Piece advantage: <span class="${round.actualScoreAfterMove.B.pieceAdvantage > 0 ? 'text-green-400' : 'text-red-400'}">${round.actualScoreAfterMove.B.pieceAdvantage > 0 ? '+' : ''}${round.actualScoreAfterMove.B.pieceAdvantage}</span></div>` : ''}
+                          ${round.actualScoreAfterMove.B.capturesThisRound !== 0 ? `<div>⚔️ Captures this round: <span class="${round.actualScoreAfterMove.B.capturesThisRound > 0 ? 'text-green-400' : 'text-red-400'}">${round.actualScoreAfterMove.B.capturesThisRound > 0 ? '+' : ''}${round.actualScoreAfterMove.B.capturesThisRound}</span></div>` : ''}
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-red-500/30">
+                          <span class="text-xs text-white/70">Total: </span>
+                          <span class="font-bold text-lg ${round.actualScoreAfterMove.B.total > 0 ? 'text-green-400' : round.actualScoreAfterMove.B.total < 0 ? 'text-red-400' : 'text-white'}">
+                            ${round.actualScoreAfterMove.B.total > 0 ? '+' : ''}${round.actualScoreAfterMove.B.total}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ` : ''}
+
+                ${round.playerBMoves && round.playerBMoves.length > 0 ? `
+                  <div class="mb-4">
+                    <div class="text-base font-bold text-red-300 mb-2">🔴 AI Moves:</div>
+                    ${round.playerBMoves.map(m => `
+                      <div class="text-sm text-white/90">P${m.pieceId}: ${m.direction} ${m.distance}</div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+
+                ${(() => {
+                  return round.aiAnalysis ? `
+                  <div class="mb-4 pb-4 border-b border-purple-400">
+                    <div class="text-base font-bold text-yellow-300 mb-3">📊 AI Analysis Scoreboard</div>
+
+                    <!-- Metadata -->
+                    <div class="grid grid-cols-3 gap-2 mb-4 text-xs text-white/70">
+                      <div>⏱️ ${round.aiAnalysis.executionTime}ms</div>
+                      <div>🎲 ${round.aiAnalysis.scenariosEvaluated.toLocaleString()} scenarios</div>
+                      <div>🎯 Worst-case: ${round.aiAnalysis.worstCaseScore}</div>
+                    </div>
+
+                    <!-- Nash Strategic Matchup -->
+                    <div class="mb-4 p-3 bg-purple-900/20 rounded-lg border border-purple-500/30">
+                      <div class="font-bold text-purple-300 mb-2">🎯 Nash Strategic Matchup</div>
+                      <div class="text-xs text-white/60 mb-2">AI's chosen move vs predicted enemy best response (${round.aiAnalysis.similarMoves} similar options)</div>
+                      ${this.renderMinimaxBoard(round)}
+                    </div>
+
+                    <!-- Predicted Position Score Breakdown -->
+                    <div class="mb-4 p-4 bg-slate-900/50 rounded-lg border border-cyan-500/30">
+                      <div class="font-bold text-cyan-300 mb-3">📊 Predicted Position Score</div>
+                      <div class="text-xs text-white/60 mb-3">What AI thought the board would be worth after these moves</div>
+
+                      <div class="grid grid-cols-2 gap-4">
+                        <!-- Blue Team (A) Predicted Breakdown -->
+                        <div class="bg-blue-900/30 p-3 rounded border border-blue-500/30">
+                          <div class="font-bold text-blue-300 mb-2">Blue Team (A)</div>
+                          <div class="text-xs space-y-1 text-white/80">
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.weHaveFlag ? `<div>✓ We have their flag: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.A.weHaveFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.theyHaveFlag ? `<div>✗ They have our flag: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.A.theyHaveFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.weOnTheirFlag ? `<div>↗ On their flag: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.A.weOnTheirFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.theyOnOurFlag ? `<div>↘ On our flag: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.A.theyOnOurFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.weInTheirSafeZone ? `<div>⚡ In their safe zone: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.A.weInTheirSafeZone}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.theyInOurSafeZone ? `<div>⚠ In our safe zone: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.A.theyInOurSafeZone}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.weOnBackWall ? `<div>🎯 On back wall: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.A.weOnBackWall}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.theyOnBackWall ? `<div>🛡 They on back wall: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.A.theyOnBackWall}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.pieceAdvantage !== 0 ? `<div>👥 Piece advantage: <span class="${round.aiAnalysis.predictedScoreBreakdown.A.pieceAdvantage > 0 ? 'text-green-400' : 'text-red-400'}">${round.aiAnalysis.predictedScoreBreakdown.A.pieceAdvantage > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.A.pieceAdvantage}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.A.capturesThisRound !== 0 ? `<div>⚔️ Captures this round: <span class="${round.aiAnalysis.predictedScoreBreakdown.A.capturesThisRound > 0 ? 'text-green-400' : 'text-red-400'}">${round.aiAnalysis.predictedScoreBreakdown.A.capturesThisRound > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.A.capturesThisRound}</span></div>` : ''}
+                          </div>
+                          <div class="mt-2 pt-2 border-t border-blue-500/30">
+                            <span class="text-xs text-white/70">Total: </span>
+                            <span class="font-bold text-lg ${round.aiAnalysis.predictedScoreBreakdown.A.total > 0 ? 'text-green-400' : round.aiAnalysis.predictedScoreBreakdown.A.total < 0 ? 'text-red-400' : 'text-white'}">
+                              ${round.aiAnalysis.predictedScoreBreakdown.A.total > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.A.total}
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Red Team (B) Predicted Breakdown -->
+                        <div class="bg-red-900/30 p-3 rounded border border-red-500/30">
+                          <div class="font-bold text-red-300 mb-2">Red Team (B)</div>
+                          <div class="text-xs space-y-1 text-white/80">
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.weHaveFlag ? `<div>✓ We have their flag: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.B.weHaveFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.theyHaveFlag ? `<div>✗ They have our flag: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.B.theyHaveFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.weOnTheirFlag ? `<div>↗ On their flag: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.B.weOnTheirFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.theyOnOurFlag ? `<div>↘ On our flag: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.B.theyOnOurFlag}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.weInTheirSafeZone ? `<div>⚡ In their safe zone: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.B.weInTheirSafeZone}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.theyInOurSafeZone ? `<div>⚠ In our safe zone: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.B.theyInOurSafeZone}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.weOnBackWall ? `<div>🎯 On back wall: <span class="text-green-400">+${round.aiAnalysis.predictedScoreBreakdown.B.weOnBackWall}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.theyOnBackWall ? `<div>🛡 They on back wall: <span class="text-red-400">${round.aiAnalysis.predictedScoreBreakdown.B.theyOnBackWall}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.pieceAdvantage !== 0 ? `<div>👥 Piece advantage: <span class="${round.aiAnalysis.predictedScoreBreakdown.B.pieceAdvantage > 0 ? 'text-green-400' : 'text-red-400'}">${round.aiAnalysis.predictedScoreBreakdown.B.pieceAdvantage > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.B.pieceAdvantage}</span></div>` : ''}
+                            ${round.aiAnalysis.predictedScoreBreakdown.B.capturesThisRound !== 0 ? `<div>⚔️ Captures this round: <span class="${round.aiAnalysis.predictedScoreBreakdown.B.capturesThisRound > 0 ? 'text-green-400' : 'text-red-400'}">${round.aiAnalysis.predictedScoreBreakdown.B.capturesThisRound > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.B.capturesThisRound}</span></div>` : ''}
+                          </div>
+                          <div class="mt-2 pt-2 border-t border-red-500/30">
+                            <span class="text-xs text-white/70">Total: </span>
+                            <span class="font-bold text-lg ${round.aiAnalysis.predictedScoreBreakdown.B.total > 0 ? 'text-green-400' : round.aiAnalysis.predictedScoreBreakdown.B.total < 0 ? 'text-red-400' : 'text-white'}">
+                              ${round.aiAnalysis.predictedScoreBreakdown.B.total > 0 ? '+' : ''}${round.aiAnalysis.predictedScoreBreakdown.B.total}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Final Predicted Score -->
+                      <div class="mt-3 text-center">
+                        <span class="text-sm text-white/70">Final Score (worst case for AI): </span>
+                        <span class="font-bold text-lg ${round.aiAnalysis.finalScore > 0 ? 'text-green-400' : round.aiAnalysis.finalScore < 0 ? 'text-red-400' : 'text-white'}">
+                          ${round.aiAnalysis.finalScore > 0 ? '+' : ''}${round.aiAnalysis.finalScore}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ` : round.aiReasoning ? `
+                  <div class="mb-4 pb-4 border-b border-purple-400">
+                    <div class="text-base font-bold text-yellow-300 mb-2">💭 AI Reasoning:</div>
+                    <div class="text-sm text-white/90 italic leading-relaxed">${round.aiReasoning}</div>
+                  </div>
+                ` : '';
+                })()}
+
+                ${round.aiPrompt ? `
+                  <div class="mt-4">
+                    <div class="text-base font-bold text-cyan-300 mb-2">📋 User Prompt:</div>
+                    <div class="text-sm text-white/80 font-mono whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto bg-black/30 p-3 rounded">${round.aiPrompt}</div>
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Close button handler
+    modal.querySelector('#closeModal')?.addEventListener('click', () => {
+      modal.remove();
+    });
+
+    // Click outside to close
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+  }
+
 }

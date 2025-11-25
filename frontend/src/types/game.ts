@@ -45,6 +45,16 @@ export interface GameState {
     A: { x: number; y: number; carriedBy: { player: 'A' | 'B'; pieceId: number } | null };
     B: { x: number; y: number; carriedBy: { player: 'A' | 'B'; pieceId: number } | null };
   };
+  noGuardZoneActive?: {
+    A: boolean;
+    B: boolean;
+  };
+  noGuardZoneBounds?: {
+    A: { minX: number; maxX: number; minY: number; maxY: number };
+    B: { minX: number; maxX: number; minY: number; maxY: number };
+  };
+  serverStartTime?: number;
+  history?: GameHistory;
 }
 
 // Lobby interfaces
@@ -53,6 +63,76 @@ export interface AvailableGame {
   playerCount: number;
   status: string;
 }
+
+export type Movement = {
+  pieceId: number;
+  direction: 'up' | 'down' | 'left' | 'right';
+  distance: number;
+};
+
+export type PieceScoring = {
+  pieceId: number;
+  action: string;
+  points: number;
+};
+
+export type TeamAnalysis = {
+  teamName: 'Blue' | 'Red';
+  alivePieces: number;
+  scoringPieces: PieceScoring[];
+  totalPoints: number;
+};
+
+export type AIAnalysis = {
+  executionTime: number;
+  scenariosEvaluated: number;
+  worstCaseScore: number;
+  similarMoves: number;
+  chosenMoves: Movement[];
+  predictedEnemyMoves: Movement[];
+  predictedScoreBreakdown: {
+    A: ScoreBreakdown;
+    B: ScoreBreakdown;
+  };
+  finalScore: number;
+};
+
+export type ScoreBreakdown = {
+  total: number;
+  weHaveFlag: number;
+  theyHaveFlag: number;
+  weOnTheirFlag: number;
+  theyOnOurFlag: number;
+  weInTheirSafeZone: number;
+  theyInOurSafeZone: number;
+  weOnBackWall: number;
+  theyOnBackWall: number;
+  pieceAdvantage: number;
+  capturesThisRound: number;
+};
+
+export type RoundHistory = {
+  round: number;
+  playerAMoves: Movement[];
+  playerBMoves: Movement[];
+  aiReasoning?: string;
+  aiAnalysis?: AIAnalysis;
+  aiPrompt?: string;
+  piecesBeforeMove?: {
+    A: GamePiece[];
+    B: GamePiece[];
+  };
+  piecesAfterMove?: {
+    A: GamePiece[];
+    B: GamePiece[];
+  };
+  actualScoreAfterMove?: {
+    A: ScoreBreakdown; // Blue team's full score breakdown (from Blue's perspective)
+    B: ScoreBreakdown; // Red team's full score breakdown (from Red's perspective)
+  };
+};
+
+export type GameHistory = RoundHistory[];
 
 // WebSocket message types
 export interface WebSocketMessage {
