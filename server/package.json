@@ -6,7 +6,7 @@
   "description": "WebSocket game server for Commander's Flag War - the ChatGPT-controlled RTS game.",
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=8192' tsx watch src/movement-server.ts",
-    "start": "node --loader tsx src/movement-server.ts"
+    "start": "node --import tsx src/movement-server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",
