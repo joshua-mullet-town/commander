@@ -6,7 +6,7 @@
   "description": "WebSocket game server for Commander's Flag War - the ChatGPT-controlled RTS game.",
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=8192' tsx watch src/movement-server.ts",
-    "build": "echo '🔨 Building with tsup...' && tsup src/movement-server.ts --format esm --target es2022 --out-dir dist && echo '✅ Build complete - dist/ created'",
+    "build": "echo '🔨 Building with tsup...' && tsup && echo '✅ Build complete - dist/ created'",
     "start": "echo '🚀 Starting server from dist/movement-server.js' && node dist/movement-server.js"
   },
   "dependencies": {
