@@ -1,5 +1,4 @@
 import { defineConfig } from 'tsup';
-import { esbuildPluginFilePathExtensions } from 'esbuild-plugin-file-path-extensions';
 
 export default defineConfig({
   entry: ['src/movement-server.ts'],
@@ -9,6 +8,6 @@ export default defineConfig({
   clean: true,
   sourcemap: false,
   bundle: true,
-  noExternal: [/.*/], // Bundle all dependencies
-  esbuildPlugins: [esbuildPluginFilePathExtensions()],
+  // Don't bundle node_modules - let them be required at runtime
+  external: [/node_modules/],
 });
