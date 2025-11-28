@@ -53,10 +53,13 @@ export class GameLoopManager {
       this.executeRound(roomCode);
     }, 3000);
 
-    // Broadcast initial state
+    // Broadcast initial state (include history for live score breakdown)
     this.roomManager.broadcastToRoom(roomCode, {
       type: 'gameState',
-      payload: room.gameState
+      payload: {
+        ...room.gameState,
+        history: room.history
+      }
     });
   }
 
@@ -88,10 +91,6 @@ export class GameLoopManager {
 
     // ⏰ Set timestamp at START of round (before any game logic)
     room.gameState.lastRoundTime = Date.now();
-
-    // Check if Player B is AI - start AI generation in background (NON-BLOCKING)
-    // AI commands will be queued for next available round when they arrive
-    this.aiOrchestrator.checkAndStartAIGeneration(roomCode);
 
     // Reduced logging - only log when there are commands to execute
     const roundCommands = room.gameState.commandQueue[room.gameState.round];
@@ -188,10 +187,18 @@ export class GameLoopManager {
       });
     }
 
-    // Broadcast updated state
+    // NOW check if Player B is AI - start AI generation with UPDATED state (NON-BLOCKING)
+    // AI will see the board state AFTER this round's moves have been executed
+    // AI commands will be queued for next available round when they arrive
+    this.aiOrchestrator.checkAndStartAIGeneration(roomCode);
+
+    // Broadcast updated state (include history for live score breakdown)
     this.roomManager.broadcastToRoom(roomCode, {
       type: 'gameState',
-      payload: room.gameState
+      payload: {
+        ...room.gameState,
+        history: room.history
+      }
     });
 
     // If game finished, send history after a delay to let animations play
