@@ -4,6 +4,41 @@
 
 ---
 
+## [2025-11-28 16:05] Railway Production Deployment SUCCESS ✅
+
+**Achievement:** Successfully deployed competitive AI to Railway - performance is EXCEPTIONAL
+
+**User Feedback:** "Super fucking fast, like ridiculously fast. We can expand this pretty seriously without running into limitations."
+
+**Deployment Details:**
+- **Problem Found:** Railway was building from root `package.json` (no build script) instead of `server/package.json`
+- **Fix:** Updated `railway.json` with explicit build/start commands
+  ```json
+  "buildCommand": "cd server && npm install && npm run build"
+  "startCommand": "cd server && npm start"
+  ```
+- **Result:** Proper TypeScript compilation → Fast, responsive gameplay
+
+**Performance Metrics:**
+- WebSocket connection: Instant, stable
+- AI move generation: Well within 3-second round window
+- No lag, no connection drops
+- Production-ready performance confirmed
+
+**Key Learnings:**
+1. Railway NIXPACKS auto-detection can miss multi-package monorepos
+2. Explicit build commands in `railway.json` are critical
+3. Compiled TypeScript (via tsup) runs smoothly in production
+4. Railway deployment is reliable once properly configured
+
+**Infrastructure Status:**
+- ✅ Backend: Railway (wss://commander-production.up.railway.app/ws)
+- ✅ Frontend: Local dev server (connects to Railway for testing)
+- ✅ All AI improvements live and working
+- ✅ No performance bottlenecks detected
+
+---
+
 ## [2025-11-28 15:45] AI is Competitive ✅
 
 **Achievement:** Position Exploration Strategy with Combinatorial Move Selection is working well

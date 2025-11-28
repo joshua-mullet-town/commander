@@ -4,50 +4,71 @@
 
 ---
 
-## CURRENT: Test Railway Deployment - Live Server Performance
+## CURRENT: Expand Board - Test System Flexibility 🧪
 
-**Goal:** Deploy backend to Railway and test real-world performance with frontend pointed at production server
+**Goal:** Expand game board to test code flexibility and discover hardcoded assumptions
 
-**Why:** We want to see if the game is responsive and fast on an actual deployed server, not just localhost
+**Why:** User wants to "dial things up a bit" - more pieces, wider board, more strategic depth. This will reveal how well-architected our codebase is.
 
-**Steps:**
+**Proposed Changes:**
 
-1. **Deploy Backend to Railway**
-   - Push current code to GitHub
-   - Railway auto-deploys from main branch
-   - Verify WebSocket server is running: `wss://commander-production.up.railway.app/ws`
+1. **Board Dimensions:**
+   - Current: 11x11 grid (11 wide × 11 deep)
+   - New: **19x11 grid** (19 wide × 11 deep)
+   - Add 4 columns to each side (left and right)
 
-2. **Configure Frontend to Use Production Server**
-   - Update frontend WebSocket connection URL
-   - Point to Railway instead of localhost:9999
-   - Test connection handshake
+2. **Piece Count:**
+   - Current: 3 pieces per team
+   - New: **5 pieces per team**
 
-3. **Performance Testing**
-   - Play several games against AI on production server
-   - Measure responsiveness (round execution, AI moves, animations)
-   - Check for lag, connection issues, or timeout problems
-   - Verify AI still plays well on deployed server
+3. **No-Guard Zone:**
+   - Current: Hardcoded to center 3x2 area
+   - New: **Dynamic sizing based on piece count**
+   - Should scale to accommodate 5 pieces
 
-4. **Debug/Logging Strategy**
-   - Production server shouldn't spam logs like dev mode
-   - Consider log levels or environment-based logging
-   - Keep critical game events, reduce verbose AI reasoning logs
+**Expected Challenges (Bug Hunt):**
+
+- 🐛 Hardcoded `11` in loops, grid classes, constants
+- 🐛 Hardcoded piece IDs (1, 2, 3) instead of dynamic loops
+- 🐛 Starting positions for 3 pieces
+- 🐛 No-guard zone bounds calculation
+- 🐛 AI combinatorial logic (currently 4×4×4 = 64 combos → will be 4×4×4×4×4 = 1024 combos)
+- 🐛 Score evaluation assuming 3 pieces
+- 🐛 Collision detection edge cases
+- 🐛 Frontend rendering assumptions
+
+**Files to Modify:**
+
+**Backend:**
+- `server/src/game/constants.ts` - Board size, starting positions, piece counts
+- `server/src/game/types.ts` - Type definitions
+- `server/src/game/GameEngine.ts` - Initialization logic
+- `server/src/ai/strategies/PositionExplorationStrategy.ts` - Combinatorial explosion (1024 combos)
+- All test files - Update scenarios
+
+**Frontend:**
+- `frontend/src/components/BattleArena.ts` - Grid rendering (`grid-cols-11` → `grid-cols-19`)
+- `frontend/src/components/BattleArena.ts` - Loop bounds (`< 11` → `< 19`)
+- Any hardcoded coordinate logic
+
+**Strategy:**
+1. Start with constants - make board size configurable
+2. Update frontend rendering
+3. Update backend game logic
+4. Fix tests
+5. Test in production on Railway
 
 **Success Criteria:**
-- ✅ Frontend connects to Railway WebSocket successfully
-- ✅ Game plays smoothly with no noticeable lag
-- ✅ AI responds within 3-second round window
-- ✅ No connection drops or errors
-- ✅ Overall experience feels "production-ready"
-
-**Known Info:**
-- Railway URL: https://commander-production.up.railway.app
-- WebSocket: wss://commander-production.up.railway.app/ws
-- Deployment: Auto-deploy on push to main branch
+- ✅ 19×11 board renders correctly
+- ✅ 5 pieces per team spawn in correct positions
+- ✅ No-guard zone dynamically sizes
+- ✅ All existing game mechanics work (flags, rescue keys, collisions)
+- ✅ AI still competitive (despite 1024 combos)
+- ✅ Performance remains fast on Railway
 
 ---
 
-## COMPLETED: Improve AI Opponent (Position Exploration Strategy) ✅
+## COMPLETED: Test Railway Deployment - Live Server Performance ✅
 
 **Goal:** Create an intelligent opponent that feels like a real challenge - eventually should dominate human players
 
