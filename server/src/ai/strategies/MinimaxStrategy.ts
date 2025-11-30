@@ -4,6 +4,7 @@
  */
 
 import { Negamax, Node } from 'minimaxer';
+import { NO_GUARD_ZONES } from '../../game/constants.js';
 
 // NodeType and NodeAim are const enums - use numeric values directly
 const NodeType = {
@@ -361,7 +362,7 @@ export class MinimaxStrategy implements AIStrategy {
   private getScoringRulesText(): string {
     return `📊 Minimax AI Scoring Rules:
 
-🏆 Win/Loss: ±10,000 points
+🏆 Win/Loss: ±100,000 points
 
 🚩 Flag Carrier Scoring:
   • We have their flag: +500
@@ -654,11 +655,8 @@ export class MinimaxStrategy implements AIStrategy {
    * Check if position is in team's no-guard zone
    */
   private isInNoGuardZone(x: number, y: number, team: 'A' | 'B'): boolean {
-    if (team === 'A') {
-      return y >= 9 && y <= 10 && x >= 4 && x <= 6;
-    } else {
-      return y >= 0 && y <= 1 && x >= 4 && x <= 6;
-    }
+    const zone = NO_GUARD_ZONES[team];
+    return x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY;
   }
 
   // ============================================================================

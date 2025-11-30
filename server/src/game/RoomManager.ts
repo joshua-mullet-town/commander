@@ -5,7 +5,7 @@
 
 import type { WebSocket } from 'ws';
 import type { GameRoom, CommanderGameState, Player } from './types';
-import { STARTING_POSITIONS } from './constants';
+import { STARTING_POSITIONS, FLAG_POSITIONS, NO_GUARD_ZONES, BOARD_WIDTH, BOARD_HEIGHT, PIECES_PER_TEAM, TERRITORY } from './constants';
 import { HumanPlayer } from './Player.js';
 import { AIPlayer } from './AIPlayer.js';
 import { MinimaxAI } from '../ai/strategies/MinimaxStrategy.js';
@@ -64,10 +64,18 @@ export class RoomManager {
     // Initialize Player B
     if (!room.gameState.players.B) {
       const playerB = this.createPlayer('player-b', 'B', playerTypeStr);
+      const pieces = STARTING_POSITIONS.B.map(pos => ({ ...pos, alive: true }));
+
+      // DEBUG: Verify pieces are initialized correctly
+      console.log('🔍 DEBUG: Player B pieces initialization:');
+      pieces.forEach(p => {
+        console.log(`   P${p.id}: (${p.x}, ${p.y}) alive: ${p.alive}`);
+      });
+
       room.gameState.players.B = {
         id: 'player-b',
         player: playerB,
-        pieces: STARTING_POSITIONS.B.map(pos => ({ ...pos, alive: true })),
+        pieces,
         jailedPieces: [],
       };
     }
@@ -144,6 +152,15 @@ export class RoomManager {
    */
   private createInitialGameState(playerA: Player): CommanderGameState {
     return {
+      // Board configuration (single source of truth from constants)
+      boardWidth: BOARD_WIDTH,
+      boardHeight: BOARD_HEIGHT,
+      piecesPerTeam: PIECES_PER_TEAM,
+      territoryBounds: {
+        A: { min: TERRITORY.A.min, max: TERRITORY.A.max },
+        B: { min: TERRITORY.B.min, max: TERRITORY.B.max }
+      },
+
       round: 1,
       players: {
         A: {
@@ -157,16 +174,16 @@ export class RoomManager {
       commandQueue: {},
       rescueKeys: { A: null, B: null },
       flags: {
-        A: { x: 5, y: 10, carriedBy: null }, // Blue flag at center back
-        B: { x: 5, y: 0, carriedBy: null },  // Red flag at center back
+        A: { ...FLAG_POSITIONS.A, carriedBy: null }, // Blue flag from constants
+        B: { ...FLAG_POSITIONS.B, carriedBy: null },  // Red flag from constants
       },
       noGuardZoneActive: {
         A: true, // Blue no-guard zone active
         B: true, // Red no-guard zone active
       },
       noGuardZoneBounds: {
-        A: this.getNoGuardZoneBounds('A'),
-        B: this.getNoGuardZoneBounds('B'),
+        A: NO_GUARD_ZONES.A, // Use constants directly
+        B: NO_GUARD_ZONES.B,
       },
       gameStatus: 'waiting',
       nextTickIn: 3,
@@ -190,19 +207,4 @@ export class RoomManager {
     return new HumanPlayer(id, side);
   }
 
-  /**
-   * Get no-guard zone boundaries for visualization
-   */
-  private getNoGuardZoneBounds(team: 'A' | 'B'): { minX: number; maxX: number; minY: number; maxY: number } {
-    const flagX = 5;
-    const flagY = team === 'A' ? 10 : 0;
-    const radius = 1;
-
-    return {
-      minX: flagX - radius,
-      maxX: flagX + radius,
-      minY: team === 'A' ? flagY - radius : flagY,
-      maxY: team === 'A' ? flagY : flagY + radius,
-    };
-  }
 }

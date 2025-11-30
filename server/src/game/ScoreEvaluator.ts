@@ -10,7 +10,7 @@
  */
 
 import type { CommanderGameState, Piece } from './types.js';
-import { NO_GUARD_ZONES } from './constants.js';
+import { NO_GUARD_ZONES, TERRITORY } from './constants.js';
 
 /**
  * Detailed breakdown of all scoring factors
@@ -59,13 +59,13 @@ export function evaluateGameState(
 
   // Terminal state: we won
   if (state.winner === ourSide) {
-    breakdown.total = 10000;
+    breakdown.total = 100000;
     return breakdown;
   }
 
   // Terminal state: we lost
   if (state.winner === opponentSide) {
-    breakdown.total = -10000;
+    breakdown.total = -100000;
     return breakdown;
   }
 
@@ -138,8 +138,11 @@ export function evaluateGameState(
   // 4. TACTICAL POSITIONS - Back wall pressure
   // ============================================================================
 
-  const enemyBackWallY = opponentSide === 'A' ? 10 : 0;
-  const ourBackWallY = ourSide === 'A' ? 10 : 0;
+  // Back wall is the furthest row in each team's territory (using dynamic bounds)
+  // Team A (Blue) back wall: max Y (top of Blue territory)
+  // Team B (Red) back wall: min Y (bottom of Red territory)
+  const enemyBackWallY = opponentSide === 'A' ? TERRITORY.A.max : TERRITORY.B.min;
+  const ourBackWallY = ourSide === 'A' ? TERRITORY.A.max : TERRITORY.B.min;
 
   const weOnBackWall = ourPieces.filter(p =>
     p.y === enemyBackWallY

@@ -96,6 +96,14 @@ export class GameLoopManager {
     const roundCommands = room.gameState.commandQueue[room.gameState.round];
     if (roundCommands && (roundCommands.playerA.length > 0 || roundCommands.playerB.length > 0)) {
       console.log(`⚡ Executing Round ${room.gameState.round} for room ${roomCode}`);
+      console.log(`📝 Player A commands:`, roundCommands.playerA);
+      console.log(`📝 Player B commands:`, roundCommands.playerB);
+    }
+
+    // DEBUG: Log all queued future rounds
+    const queuedRounds = Object.keys(room.gameState.commandQueue).map(Number).sort((a, b) => a - b);
+    if (queuedRounds.length > 0) {
+      console.log(`🔮 Future commands queued for rounds: ${queuedRounds.filter(r => r > room.gameState.round).join(', ') || 'none'}`);
     }
 
     // Reset any pieces that picked up keys in the previous round

@@ -35,6 +35,15 @@ export type PlayerData = {
 // ============================================================================
 
 export type CommanderGameState = {
+  // Board configuration (sent from server, no hardcoding on frontend)
+  boardWidth: number;
+  boardHeight: number;
+  piecesPerTeam: number;
+  territoryBounds: {
+    A: { min: number; max: number }; // Blue territory Y bounds
+    B: { min: number; max: number }; // Red territory Y bounds
+  };
+
   round: number;
   players: {
     A: PlayerData | null;

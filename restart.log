@@ -1,0 +1,30 @@
+
+> commander@0.1.0 restart
+> bash scripts/restart-servers.sh
+
+🔄 Restarting Commander servers...
+
+🛑 Stopping Commander servers...
+🔪 Killing backend server (PID: 25615)...
+✅ Backend stopped
+🔪 Killing frontend server (PID: 25616)...
+✅ Frontend stopped
+✅ All servers stopped
+
+⏳ Waiting 2 seconds for ports to free up...
+
+🚀 Starting Commander servers...
+📡 Starting backend server (port 9999)...
+✅ Backend started with PID: 26375
+🎨 Starting frontend server (port 3456)...
+✅ Frontend started with PID: 26376
+
+🎮 Servers running:
+   Backend:  http://localhost:9999 (PID: 26375)
+   Frontend: http://localhost:3456 (PID: 26376)
+
+📝 Logs:
+   Backend:  tail -f /Users/joshuamullet/code/commander/.backend.log
+   Frontend: tail -f /Users/joshuamullet/code/commander/.frontend.log
+
+🛑 To stop: npm run stop

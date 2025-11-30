@@ -1,0 +1,41 @@
+TAP version 13
+# ✅ Initial state test defined
+# 🧪 INITIAL STATE TEST: Symmetrical board
+#    Blue pieces: [ '(4,8)', '(5,8)', '(6,8)' ]
+#    Red pieces: [ '(4,2)', '(5,2)', '(6,2)' ]
+# 🎯 [POSITION EXPLORATION] Generating move for Player A
+#    Step 1: Finding enemy's best moves...
+#       Enemy piece 1: delta=0.00, move=up 0
+#       Enemy piece 2: delta=0.00, move=up 0
+#       Enemy piece 3: delta=0.00, move=up 0
+#    Step 2: Finding AI's best moves (against enemy response)...
+#       AI piece 1: delta=0.00, move=up 0
+#       AI piece 2: delta=0.00, move=up 0
+#       AI piece 3: delta=0.00, move=up 0
+#    ✅ Best moves found
+#    ⏱️  Execution time: 8ms
+# 📊 AI Decision:
+#    Commands returned: [
+#   { pieceId: 1, direction: 'up', distance: 0 },
+#   { pieceId: 2, direction: 'up', distance: 0 },
+#   { pieceId: 3, direction: 'up', distance: 0 }
+# ]
+#    Piece 1: up 0
+#    Piece 2: up 0
+#    Piece 3: up 0
+# ✅ PASS: AI correctly chose to stay still in initial state
+#    All pieces have distance=0 (no movement)
+# Subtest: PositionExplorationStrategy - Initial state: AI should choose to stay still
+ok 1 - PositionExplorationStrategy - Initial state: AI should choose to stay still
+  ---
+  duration_ms: 9.349458
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 159.117625

@@ -10,6 +10,7 @@
 
 import type { AIStrategy, Command, AIResponse } from './AIStrategy.js';
 import type { CommanderGameState } from '../../game/types.js';
+import { BOARD_WIDTH, BOARD_HEIGHT, TERRITORY } from '../../game/constants.js';
 
 // ============================================================================
 // Types & Interfaces
@@ -112,14 +113,15 @@ export class HeuristicStrategy implements AIStrategy {
   private generatePossibleMoves(piece: Piece, gameState: CommanderGameState): Move[] {
     const moves: Move[] = [];
     const directions: Array<'up' | 'down' | 'left' | 'right'> = ['up', 'down', 'left', 'right'];
+    const maxDistance = Math.max(BOARD_WIDTH, BOARD_HEIGHT);
 
-    // Try distances 1-10 in each direction
+    // Try all distances in each direction (dynamic based on board size)
     for (const direction of directions) {
-      for (let distance = 1; distance <= 10; distance++) {
+      for (let distance = 1; distance <= maxDistance; distance++) {
         const endPos = this.calculateEndPosition(piece, direction, distance);
 
         // Validate move stays on board
-        if (endPos.x >= 0 && endPos.x <= 10 && endPos.y >= 0 && endPos.y <= 10) {
+        if (endPos.x >= 0 && endPos.x < BOARD_WIDTH && endPos.y >= 0 && endPos.y < BOARD_HEIGHT) {
           moves.push({
             pieceId: piece.id,
             direction,
@@ -375,11 +377,10 @@ export class HeuristicStrategy implements AIStrategy {
     const enemyPlayer = aiPlayer === 'A' ? 'B' : 'A';
     const enemyPieces = gameState.players[enemyPlayer]?.pieces.filter(p => p.alive) || [];
 
-    // Determine enemy territory
-    // Team A territory: y >= 6, Team B territory: y <= 4
+    // Determine enemy territory using dynamic bounds
     const isInEnemyTerritory = aiPlayer === 'A'
-      ? move.endPos.y <= 4  // We're Team A, enemy territory is rows 0-4
-      : move.endPos.y >= 6; // We're Team B, enemy territory is rows 6-10
+      ? (move.endPos.y >= TERRITORY.B.min && move.endPos.y <= TERRITORY.B.max)  // We're Team A, enemy territory is Team B's
+      : (move.endPos.y >= TERRITORY.A.min && move.endPos.y <= TERRITORY.A.max); // We're Team B, enemy territory is Team A's
 
     // If we're NOT in enemy territory, we can't get tagged (we're safe)
     if (!isInEnemyTerritory) {

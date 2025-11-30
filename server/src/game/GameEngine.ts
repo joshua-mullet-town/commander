@@ -7,6 +7,7 @@ import type { CommanderGameState, Movement } from './types';
 import { CommandProcessor, type PiecePath } from './CommandProcessor.js';
 import { CollisionDetector } from './CollisionDetector.js';
 import { FlagManager } from './FlagManager.js';
+import { TERRITORY } from './constants.js';
 
 export class GameEngine {
   private commandProcessor: CommandProcessor = new CommandProcessor();
@@ -56,27 +57,27 @@ export class GameEngine {
    * Check if either team has won
    */
   private checkWinCondition(gameState: CommanderGameState): void {
-    // Player A (Blue) wins if they bring Red flag to Blue territory (rows 6-10)
+    // Player A (Blue) wins if they bring Red flag to Blue territory (using dynamic bounds)
     if (gameState.flags.B.carriedBy?.player === 'A') {
       const carrier = gameState.players.A?.pieces.find(
         p => p.id === gameState.flags.B.carriedBy?.pieceId
       );
-      if (carrier && carrier.y >= 6) {
+      if (carrier && carrier.y >= TERRITORY.A.min && carrier.y <= TERRITORY.A.max) {
         gameState.gameStatus = 'finished';
         gameState.winner = 'A';
-        console.log(`🏆 Player A (Blue) wins! Brought Red flag to Blue territory`);
+        console.log(`🏆 Player A (Blue) wins! Brought Red flag to Blue territory (rows ${TERRITORY.A.min}-${TERRITORY.A.max})`);
       }
     }
 
-    // Player B (Red) wins if they bring Blue flag to Red territory (rows 0-4)
+    // Player B (Red) wins if they bring Blue flag to Red territory (using dynamic bounds)
     if (gameState.flags.A.carriedBy?.player === 'B') {
       const carrier = gameState.players.B?.pieces.find(
         p => p.id === gameState.flags.A.carriedBy?.pieceId
       );
-      if (carrier && carrier.y <= 4) {
+      if (carrier && carrier.y >= TERRITORY.B.min && carrier.y <= TERRITORY.B.max) {
         gameState.gameStatus = 'finished';
         gameState.winner = 'B';
-        console.log(`🏆 Player B (Red) wins! Brought Blue flag to Red territory`);
+        console.log(`🏆 Player B (Red) wins! Brought Blue flag to Red territory (rows ${TERRITORY.B.min}-${TERRITORY.B.max})`);
       }
     }
   }

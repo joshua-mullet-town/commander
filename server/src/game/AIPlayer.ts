@@ -23,6 +23,14 @@ export class AIPlayer implements Player {
    */
   async getCommands(gameState: CommanderGameState): Promise<AIResponse> {
     console.log(`🎯 AIPlayer.getCommands() called - Strategy: ${this.strategy.name}, Side: ${this.side}, Round: ${gameState.round}`);
+
+    // DEBUG: Log actual piece positions before AI evaluates
+    const ourPieces = gameState.players[this.side].pieces;
+    console.log(`📍 ACTUAL PIECE POSITIONS (Side ${this.side}):`);
+    ourPieces.forEach(p => {
+      console.log(`   P${p.id}: (${p.x}, ${p.y}) alive: ${p.alive}`);
+    });
+
     const result = await this.strategy.getCommands(gameState, this.side);
     console.log(`✅ AIPlayer.getCommands() returned ${result.commands.length} commands:`, result.commands);
     return result;

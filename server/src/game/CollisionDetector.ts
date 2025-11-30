@@ -5,12 +5,14 @@
 
 import type { CommanderGameState } from './types';
 import type { PiecePath } from './CommandProcessor';
+import { TERRITORY } from './constants.js';
 
 export interface Collision {
   player: 'A' | 'B';
   pieceId: number;
   x: number;
   y: number;
+  step: number; // Step at which collision occurred
 }
 
 export class CollisionDetector {
@@ -21,7 +23,7 @@ export class CollisionDetector {
   detectCollisions(allPaths: PiecePath[]): Collision[] {
     const collisions: Collision[] = [];
 
-    // Disabled verbose logging for minimax performance
+    // Disabled verbose logging for performance
     // console.log(`🔍 Collision detection: checking ${allPaths.length} moving pieces`);
     // allPaths.forEach((p, idx) => {
     //   console.log(`  Path ${idx}: Player ${p.player} Piece ${p.pieceId}, ${p.path.length} steps, final: (${p.finalPosition.x},${p.finalPosition.y})`);
@@ -46,13 +48,27 @@ export class CollisionDetector {
           if (posA.x === posB.x && posA.y === posB.y) {
             // console.log(`💥 Collision detected at step ${step}: ${pathA.player} Piece ${pathA.pieceId} and ${pathB.player} Piece ${pathB.pieceId} at (${posA.x},${posA.y})`);
 
+            // CRITICAL FIX: Skip same-team collisions - players can move through teammates
+            if (pathA.player === pathB.player) {
+              // console.log(`🔵🔵 Same team collision - ${pathA.player} P${pathA.pieceId} and P${pathB.pieceId} - allowing pass-through`);
+              continue; // Don't record collision, don't modify paths
+            }
+
             // Only add if not already recorded
             if (!collisions.find(c => c.player === pathA.player && c.pieceId === pathA.pieceId)) {
-              collisions.push({ player: pathA.player, pieceId: pathA.pieceId, x: posA.x, y: posA.y });
+              collisions.push({ player: pathA.player, pieceId: pathA.pieceId, x: posA.x, y: posA.y, step });
             }
             if (!collisions.find(c => c.player === pathB.player && c.pieceId === pathB.pieceId)) {
-              collisions.push({ player: pathB.player, pieceId: pathB.pieceId, x: posB.x, y: posB.y });
+              collisions.push({ player: pathB.player, pieceId: pathB.pieceId, x: posB.x, y: posB.y, step });
             }
+
+            // CRITICAL FIX: Truncate paths at collision point
+            // Pieces should stop where they collided, not continue to final destination
+            pathA.path = pathA.path.slice(0, step + 1);
+            pathA.finalPosition = posA;
+            pathB.path = pathB.path.slice(0, step + 1);
+            pathB.finalPosition = posB;
+
             break; // Stop checking this pair after first collision
           }
         }
@@ -77,13 +93,26 @@ export class CollisionDetector {
               currentB.x === nextA.x && currentB.y === nextA.y) {
             // console.log(`🔄 Head-on collision at step ${step}: ${pathA.player} Piece ${pathA.pieceId} and ${pathB.player} Piece ${pathB.pieceId} swapping cells`);
 
+            // CRITICAL FIX: Skip same-team head-on collisions - players can move through teammates
+            if (pathA.player === pathB.player) {
+              // console.log(`🔵🔵 Same team head-on collision - ${pathA.player} P${pathA.pieceId} and P${pathB.pieceId} - allowing pass-through`);
+              continue; // Don't record collision, don't modify paths
+            }
+
             // Add both pieces to collision list
             if (!collisions.find(c => c.player === pathA.player && c.pieceId === pathA.pieceId)) {
-              collisions.push({ player: pathA.player, pieceId: pathA.pieceId, x: nextA.x, y: nextA.y });
+              collisions.push({ player: pathA.player, pieceId: pathA.pieceId, x: currentA.x, y: currentA.y, step });
             }
             if (!collisions.find(c => c.player === pathB.player && c.pieceId === pathB.pieceId)) {
-              collisions.push({ player: pathB.player, pieceId: pathB.pieceId, x: nextB.x, y: nextB.y });
+              collisions.push({ player: pathB.player, pieceId: pathB.pieceId, x: currentB.x, y: currentB.y, step });
             }
+
+            // CRITICAL FIX: Truncate paths at collision point (they collide BEFORE reaching next cell)
+            pathA.path = pathA.path.slice(0, step + 1);
+            pathA.finalPosition = currentA;
+            pathB.path = pathB.path.slice(0, step + 1);
+            pathB.finalPosition = currentB;
+
             break;
           }
         }
@@ -107,11 +136,15 @@ export class CollisionDetector {
       const piece = playerData?.pieces.find(p => p.id === collision.pieceId);
       if (!piece || !playerData) return;
 
-      // Determine territory (A: rows 6-10, B: rows 0-4, Neutral: row 5)
+      // Determine territory using constants (dynamic based on board size)
       let territory: 'A' | 'B' | 'neutral';
-      if (collision.y >= 6) territory = 'A';
-      else if (collision.y <= 4) territory = 'B';
-      else territory = 'neutral';
+      if (collision.y >= TERRITORY.A.min && collision.y <= TERRITORY.A.max) {
+        territory = 'A';
+      } else if (collision.y >= TERRITORY.B.min && collision.y <= TERRITORY.B.max) {
+        territory = 'B';
+      } else {
+        territory = 'neutral';
+      }
 
       // Check if opponent is also in collision (for same-team check)
       const opponentPlayer = collision.player === 'A' ? 'B' : 'A';
@@ -125,18 +158,23 @@ export class CollisionDetector {
         return;
       }
 
-      // Enemy collision - apply jail rules
+      // Enemy collision - apply territory-based jail rules
       if (territory === 'neutral') {
+        // Neutral zone: both pieces get jailed
         // console.log(`⚖️ Neutral zone - ${collision.player} Piece ${collision.pieceId} goes to jail`);
         piece.alive = false;
         playerData.jailedPieces.push(collision.pieceId);
         onPieceCaptured(gameState, collision.player, collision.pieceId);
       } else if (territory !== collision.player) {
+        // Piece is in enemy territory - they are the INVADER
+        // INVADER gets captured by defender (defender stays safe)
         // console.log(`⚔️ ${collision.player} Piece ${collision.pieceId} tagged in enemy territory - goes to jail`);
         piece.alive = false;
         playerData.jailedPieces.push(collision.pieceId);
         onPieceCaptured(gameState, collision.player, collision.pieceId);
       } else {
+        // Piece is in own territory - they are the DEFENDER
+        // DEFENDER captures invader (defender stays safe)
         // console.log(`🛡️ ${collision.player} Piece ${collision.pieceId} defending in own territory - safe`);
       }
     });

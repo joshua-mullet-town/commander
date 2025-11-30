@@ -30,6 +30,15 @@ export interface CommandQueue {
 }
 
 export interface GameState {
+  // Board configuration (sent from server, no hardcoding needed)
+  boardWidth: number;
+  boardHeight: number;
+  piecesPerTeam: number;
+  territoryBounds: {
+    A: { min: number; max: number }; // Blue territory Y bounds
+    B: { min: number; max: number }; // Red territory Y bounds
+  };
+
   round: number;
   nextTickIn?: number;
   lastRoundTime?: number;

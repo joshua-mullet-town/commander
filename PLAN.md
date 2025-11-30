@@ -4,7 +4,66 @@
 
 ---
 
-## CURRENT: Expand Board - Test System Flexibility 🧪
+## CURRENT: AI Collision Simulation Bug - Doesn't Prevent Obvious Flag Captures 🐛
+
+**Problem:** AI fails to make obvious defensive moves that would prevent flag captures, even when it correctly predicts the enemy's attacking move.
+
+**Concrete Example (Round 7):**
+
+**Board State:**
+- Blue P4 at (9, 10) - clear path to Red flag at (9, 0)
+- Red P6 at (10, 2) - **one move LEFT would intercept at (9, 2)**
+- Red P2 at (10, 12) with Blue flag (deep in enemy territory)
+
+**What AI Predicted:**
+- Blue P4 will move DOWN 10 → straight to flag at (9, 0)
+- If this happens: Blue captures flag (+8000), safe zone bonus (+3000), captures (+1000) = **+14,300 for Blue**
+
+**What AI Chose:**
+- **ALL Red pieces stay still** (worstCaseScore = 0)
+- No attempt to block despite knowing the attack path
+
+**Why This Is Wrong:**
+- Red P6 LEFT 1 → (9, 2) intercepts Blue P4 at step 8 of its path
+- In Red territory: Blue P4 = invader = JAILED, Red P6 = defender = SAFE
+- **Flag saved, score swing from -8000 to 0 = +8000 delta**
+- AI should easily see this is the best defensive move
+
+**Hypothesis - Collision Simulation Broken:**
+
+The AI's move evaluation likely has one of these bugs:
+1. **Collision not detected:** Simulation doesn't catch that Blue P4 path crosses Red P6's position
+2. **Collision consequences ignored:** Collision detected but score still counts Blue as capturing flag
+3. **Enemy adaptation bug:** AI thinks Blue will dodge Red P6 (shouldn't happen - Blue's move is pre-calculated)
+
+**Next Steps:**
+
+1. **Add debug logging** to `applySimultaneousMoves()` in PositionExplorationStrategy
+   - Log when Red P6 evaluates LEFT 1 with enemy move "Blue P4 DOWN 10"
+   - Check if collision is detected
+   - Check final piece positions after simulation
+   - Check if Blue flag.carriedBy is set despite collision
+
+2. **Simulate this exact board state** with added logging
+   - Input: Round 7 board state (documented above)
+   - Trace through Red P6's evaluation of LEFT 1
+   - See what score it calculates and why
+
+3. **Fix the bug** once identified
+   - If collision not detected: fix collision detection
+   - If score wrong after collision: fix score evaluation
+   - If enemy adapts: fix enemy move prediction logic
+
+4. **Verify fix** with same board state
+   - AI should choose Red P6 LEFT 1 to block
+   - worstCaseScore should reflect the defensive save
+
+**Test Data Saved:**
+Round 7 debug JSON captured - ready for simulation debugging
+
+---
+
+## NEXT: Expand Board - Test System Flexibility 🧪
 
 **Goal:** Expand game board to test code flexibility and discover hardcoded assumptions
 

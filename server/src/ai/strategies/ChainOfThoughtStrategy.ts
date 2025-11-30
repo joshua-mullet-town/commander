@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { AIStrategy, AIResponse, Command } from './AIStrategy.js';
 import type { GameState } from '../../game/types.js';
+import { BOARD_WIDTH, BOARD_HEIGHT } from '../../game/constants.js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -249,7 +250,7 @@ ${response}
         const ny = y + dy;
 
         // Check bounds and exclude the flag square itself
-        if (nx >= 0 && nx <= 10 && ny >= 0 && ny <= 10 && !(dx === 0 && dy === 0)) {
+        if (nx >= 0 && nx < BOARD_WIDTH && ny >= 0 && ny < BOARD_HEIGHT && !(dx === 0 && dy === 0)) {
           restrictedSquares.push({ x: nx, y: ny });
         }
       }

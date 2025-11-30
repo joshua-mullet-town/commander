@@ -4,6 +4,7 @@
  */
 
 import type { CommanderGameState, Movement, Piece } from './types';
+import { BOARD_WIDTH, BOARD_HEIGHT, NO_GUARD_ZONES } from './constants.js';
 
 interface PiecePath {
   player: 'A' | 'B';
@@ -175,9 +176,9 @@ export class CommandProcessor {
       const nextX = currentX + stepX;
       const nextY = currentY + stepY;
 
-      // Stop at board boundaries
-      if (nextX < 0 || nextX > 10 || nextY < 0 || nextY > 10) {
-        console.log(`🚫 ${player} P${pieceId} STOPPED at boundary: would go to (${nextX},${nextY})`);
+      // Stop at board boundaries (use dynamic board size)
+      if (nextX < 0 || nextX >= BOARD_WIDTH || nextY < 0 || nextY >= BOARD_HEIGHT) {
+        console.log(`🚫 ${player} P${pieceId} STOPPED at boundary: would go to (${nextX},${nextY}) - board size ${BOARD_WIDTH}x${BOARD_HEIGHT}`);
         break;
       }
 
@@ -218,13 +219,8 @@ export class CommandProcessor {
    * Check if a position is in a team's no-guard zone
    */
   private isInNoGuardZone(x: number, y: number, team: 'A' | 'B'): boolean {
-    if (team === 'A') {
-      // Blue no-guard zone: rows 9-10 (x: 4-6)
-      return y >= 9 && y <= 10 && x >= 4 && x <= 6;
-    } else {
-      // Red no-guard zone: rows 0-1 (x: 4-6)
-      return y >= 0 && y <= 1 && x >= 4 && x <= 6;
-    }
+    const zone = NO_GUARD_ZONES[team];
+    return x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY;
   }
 }
 
