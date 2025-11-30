@@ -20,6 +20,7 @@ import { CommandProcessor } from '../../game/CommandProcessor.js';
 import { CollisionDetector } from '../../game/CollisionDetector.js';
 import { FlagManager } from '../../game/FlagManager.js';
 import { evaluateGameStateQuick, evaluateGameState } from '../../game/ScoreEvaluator.js';
+import { PIECES_PER_TEAM, BOARD_WIDTH, BOARD_HEIGHT } from '../../game/constants.js';
 
 // ============================================================================
 // Type Definitions
@@ -45,13 +46,9 @@ interface DirectionalMoves {
 }
 
 /**
- * Represents a complete set of moves for all 3 pieces
+ * Represents a complete set of moves for all pieces
  */
-type CombinedMove = {
-  piece1: Movement;
-  piece2: Movement;
-  piece3: Movement;
-};
+type CombinedMove = Movement[];
 
 // ============================================================================
 // PositionExplorationStrategy Implementation
@@ -81,8 +78,20 @@ export class PositionExplorationStrategy implements AIStrategy {
 
     console.log(`\n🎯 [POSITION EXPLORATION] Generating move for Player ${side}`);
 
+    // DEBUG: Log actual piece positions from game state
+    console.log(`📍 GAME STATE PIECES (Side ${side}):`);
+    gameState.players[side].pieces.forEach(p => {
+      console.log(`   P${p.id}: (${p.x}, ${p.y}) alive: ${p.alive}`);
+    });
+
     // Clone initial state for simulations
     const initialState = this.cloneGameState(gameState);
+
+    // DEBUG: Verify cloned state matches
+    console.log(`📍 CLONED STATE PIECES (Side ${side}):`);
+    initialState.players[side].pieces.forEach(p => {
+      console.log(`   P${p.id}: (${p.x}, ${p.y}) alive: ${p.alive}`);
+    });
 
     // Step 1: Find enemy's best move per piece (holding AI still)
     console.log(`   Step 1: Finding enemy's best moves...`);
@@ -100,44 +109,46 @@ export class PositionExplorationStrategy implements AIStrategy {
       console.log(`      Enemy piece ${piece.id}: delta=${result.scoreDelta.toFixed(2)}, move=${result.movement.direction} ${result.movement.distance}`);
     }
 
-    // Step 2: Combine enemy best moves
-    const enemyCombinedMove: CombinedMove = {
-      piece1: enemyBestMoves[0] || { pieceId: 1, direction: 'up', distance: 0 },
-      piece2: enemyBestMoves[1] || { pieceId: 2, direction: 'up', distance: 0 },
-      piece3: enemyBestMoves[2] || { pieceId: 3, direction: 'up', distance: 0 }
-    };
+    // Step 2: Combine enemy best moves (fill missing pieces with stay-still)
+    const enemyCombinedMove: CombinedMove = [];
+    for (let i = 1; i <= PIECES_PER_TEAM; i++) {
+      enemyCombinedMove.push(
+        enemyBestMoves.find(m => m.pieceId === i) || { pieceId: i, direction: 'up', distance: 0 }
+      );
+    }
 
     // Step 3: Find AI's best moves per direction per piece (against enemy's best)
     console.log(`   Step 2: Finding AI's best moves per direction (against enemy response)...`);
     const aiPieces = initialState.players[side].pieces.filter(p => p.alive);
 
-    const piece1Moves = this.findBestMovesPerDirection(
-      initialState,
-      1,
-      side,
-      enemyCombinedMove
-    );
+    // Find best moves per direction for each ALIVE piece only
+    const allPieceMoves: DirectionalMoves[] = [];
+    for (const piece of aiPieces) {
+      const pieceMoves = this.findBestMovesPerDirection(
+        initialState,
+        piece.id,
+        side,
+        enemyCombinedMove
+      );
+      allPieceMoves.push(pieceMoves);
 
-    const piece2Moves = this.findBestMovesPerDirection(
-      initialState,
-      2,
-      side,
-      enemyCombinedMove
-    );
-
-    const piece3Moves = this.findBestMovesPerDirection(
-      initialState,
-      3,
-      side,
-      enemyCombinedMove
-    );
-
-    console.log(`      P1 best per direction: UP=${piece1Moves.up.scoreDelta.toFixed(0)}, DOWN=${piece1Moves.down.scoreDelta.toFixed(0)}, LEFT=${piece1Moves.left.scoreDelta.toFixed(0)}, RIGHT=${piece1Moves.right.scoreDelta.toFixed(0)}`);
-    console.log(`      P2 best per direction: UP=${piece2Moves.up.scoreDelta.toFixed(0)}, DOWN=${piece2Moves.down.scoreDelta.toFixed(0)}, LEFT=${piece2Moves.left.scoreDelta.toFixed(0)}, RIGHT=${piece2Moves.right.scoreDelta.toFixed(0)}`);
-    console.log(`      P3 best per direction: UP=${piece3Moves.up.scoreDelta.toFixed(0)}, DOWN=${piece3Moves.down.scoreDelta.toFixed(0)}, LEFT=${piece3Moves.left.scoreDelta.toFixed(0)}, RIGHT=${piece3Moves.right.scoreDelta.toFixed(0)}`);
+      console.log(`      P${piece.id} best per direction: UP=${pieceMoves.up.scoreDelta.toFixed(0)}, DOWN=${pieceMoves.down.scoreDelta.toFixed(0)}, LEFT=${pieceMoves.left.scoreDelta.toFixed(0)}, RIGHT=${pieceMoves.right.scoreDelta.toFixed(0)}`);
+    }
 
     // Step 4: Find best combination (avoids stacking)
-    const aiBestMoves = this.findBestCombination(piece1Moves, piece2Moves, piece3Moves);
+    const aliveMovesOnly = this.findBestCombination(allPieceMoves);
+
+    // Fill in dead pieces with "stay still" commands
+    const aiBestMoves: Movement[] = [];
+    for (let pieceId = 1; pieceId <= PIECES_PER_TEAM; pieceId++) {
+      const aliveMove = aliveMovesOnly.find(m => m.pieceId === pieceId);
+      if (aliveMove) {
+        aiBestMoves.push(aliveMove);
+      } else {
+        // Dead piece - stay still
+        aiBestMoves.push({ pieceId, direction: 'up', distance: 0 });
+      }
+    }
 
     // Step 5: Simulate final state with best moves and calculate predicted score breakdown
     const finalState = this.cloneGameState(gameState);
@@ -231,9 +242,10 @@ export class PositionExplorationStrategy implements AIStrategy {
 
     // Step 3: Explore all directions and distances
     const directions: ('up' | 'down' | 'left' | 'right')[] = ['up', 'down', 'left', 'right'];
+    const maxDistance = Math.max(BOARD_WIDTH, BOARD_HEIGHT); // Max possible move distance
 
     for (const direction of directions) {
-      for (let distance = 1; distance <= 10; distance++) {
+      for (let distance = 1; distance <= maxDistance; distance++) {
         const testState = this.cloneGameState(gameState);
         const testMovement: Movement = { pieceId, direction, distance };
 
@@ -338,9 +350,10 @@ export class PositionExplorationStrategy implements AIStrategy {
 
     // Explore all distances for each direction
     const directions: ('up' | 'down' | 'left' | 'right')[] = ['up', 'down', 'left', 'right'];
+    const maxDistance = Math.max(BOARD_WIDTH, BOARD_HEIGHT); // Max possible move distance
 
     for (const direction of directions) {
-      for (let distance = 1; distance <= 10; distance++) {
+      for (let distance = 1; distance <= maxDistance; distance++) {
         const testState = this.cloneGameState(gameState);
         const testMovement: Movement = { pieceId, direction, distance };
 
@@ -379,64 +392,73 @@ export class PositionExplorationStrategy implements AIStrategy {
   /**
    * Find the best COMBINATION of moves across all pieces
    *
-   * Given 4 moves per piece (3 pieces), evaluates all 64 combinations,
+   * Given 4 moves per piece (N pieces), evaluates all 4^N combinations,
    * filters out friendly collisions, and returns the combination with
    * highest total score.
    */
-  private findBestCombination(
-    piece1Moves: DirectionalMoves,
-    piece2Moves: DirectionalMoves,
-    piece3Moves: DirectionalMoves
-  ): Movement[] {
+  private findBestCombination(allPieceMoves: DirectionalMoves[]): Movement[] {
     const directions: ('up' | 'down' | 'left' | 'right')[] = ['up', 'down', 'left', 'right'];
+    const numPieces = allPieceMoves.length;
+    const totalCombinations = Math.pow(4, numPieces);
 
-    let bestCombination: Movement[] = [
-      { pieceId: 1, direction: 'up', distance: 0 },
-      { pieceId: 2, direction: 'up', distance: 0 },
-      { pieceId: 3, direction: 'up', distance: 0 }
-    ];
+    // Initialize best combination (all pieces stay still)
+    // Use the actual piece IDs from the moves
+    let bestCombination: Movement[] = allPieceMoves.map(pieceMoves =>
+      pieceMoves.up.movement // All directions have same pieceId, use 'up'
+    );
     let bestTotalScore = 0;
 
-    console.log('   🔀 Evaluating all combinations (4×4×4 = 64)...');
+    console.log(`   🔀 Evaluating all combinations (4^${numPieces} = ${totalCombinations})...`);
 
-    // Try all combinations
-    for (const dir1 of directions) {
-      for (const dir2 of directions) {
-        for (const dir3 of directions) {
-          const move1 = piece1Moves[dir1];
-          const move2 = piece2Moves[dir2];
-          const move3 = piece3Moves[dir3];
+    // Generate all combinations using recursive helper
+    const evaluateCombination = (directionIndices: number[]) => {
+      // Build moves array from direction indices
+      const moves: BestMoveResult[] = allPieceMoves.map((pieceMoves, pieceIdx) => {
+        const dirIdx = directionIndices[pieceIdx];
+        const dir = directions[dirIdx];
+        return pieceMoves[dir];
+      });
 
-          // Check for friendly stacking
-          const pos1 = move1.finalPosition;
-          const pos2 = move2.finalPosition;
-          const pos3 = move3.finalPosition;
-
-          const p1p2Stack = pos1.x === pos2.x && pos1.y === pos2.y;
-          const p1p3Stack = pos1.x === pos3.x && pos1.y === pos3.y;
-          const p2p3Stack = pos2.x === pos3.x && pos2.y === pos3.y;
-
-          if (p1p2Stack || p1p3Stack || p2p3Stack) {
+      // Check for friendly stacking
+      for (let i = 0; i < moves.length; i++) {
+        for (let j = i + 1; j < moves.length; j++) {
+          const pos1 = moves[i].finalPosition;
+          const pos2 = moves[j].finalPosition;
+          if (pos1.x === pos2.x && pos1.y === pos2.y) {
             // Friendly collision - skip this combination
-            continue;
-          }
-
-          // Calculate total score
-          const totalScore = move1.scoreDelta + move2.scoreDelta + move3.scoreDelta;
-
-          // Keep if best so far
-          if (totalScore > bestTotalScore) {
-            bestTotalScore = totalScore;
-            bestCombination = [move1.movement, move2.movement, move3.movement];
+            return;
           }
         }
       }
-    }
+
+      // Calculate total score
+      const totalScore = moves.reduce((sum, move) => sum + move.scoreDelta, 0);
+
+      // Keep if best so far
+      if (totalScore > bestTotalScore) {
+        bestTotalScore = totalScore;
+        bestCombination = moves.map(m => m.movement);
+      }
+    };
+
+    // Recursively generate all combinations
+    const generateCombinations = (currentIndices: number[]) => {
+      if (currentIndices.length === numPieces) {
+        evaluateCombination(currentIndices);
+        return;
+      }
+
+      for (let dirIdx = 0; dirIdx < 4; dirIdx++) {
+        generateCombinations([...currentIndices, dirIdx]);
+      }
+    };
+
+    generateCombinations([]);
 
     console.log(`   ✅ Best combination: total delta = ${bestTotalScore.toFixed(0)}`);
-    console.log(`      P1: ${bestCombination[0].direction} ${bestCombination[0].distance}`);
-    console.log(`      P2: ${bestCombination[1].direction} ${bestCombination[1].distance}`);
-    console.log(`      P3: ${bestCombination[2].direction} ${bestCombination[2].distance}`);
+    bestCombination.forEach((move, i) => {
+      console.log(`      P${i+1}: ${move.direction} ${move.distance}`);
+    });
 
     return bestCombination;
   }
@@ -490,17 +512,14 @@ export class PositionExplorationStrategy implements AIStrategy {
   ): void {
     const enemySide = ourSide === 'A' ? 'B' : 'A';
 
+    const enemyMoveStr = enemyMove.map((m, i) => `P${i+1}=${m.direction} ${m.distance}`).join(', ');
     console.log(`         🔧 applySimultaneousMoves: Our P${ourMove.pieceId} ${ourMove.direction} ${ourMove.distance} (side ${ourSide})`);
-    console.log(`            vs Enemy: P1=${enemyMove.piece1.direction} ${enemyMove.piece1.distance}, P2=${enemyMove.piece2.direction} ${enemyMove.piece2.distance}, P3=${enemyMove.piece3.direction} ${enemyMove.piece3.distance}`);
+    console.log(`            vs Enemy: ${enemyMoveStr}`);
 
     // Build movement commands for BOTH players
     const commands = {
-      playerA: ourSide === 'A'
-        ? [ourMove]
-        : [enemyMove.piece1, enemyMove.piece2, enemyMove.piece3],
-      playerB: ourSide === 'B'
-        ? [ourMove]
-        : [enemyMove.piece1, enemyMove.piece2, enemyMove.piece3]
+      playerA: ourSide === 'A' ? [ourMove] : enemyMove,
+      playerB: ourSide === 'B' ? [ourMove] : enemyMove
     };
 
     // Log piece counts BEFORE
